@@ -17,7 +17,7 @@ int vertices[VERT][DIM]; // The input
 int dimension, nvert, nfacets;
 int nfacets_for_testing[DIM+1]; // Contains the num of facets with less or equal k vertices
 int *curface[VERT]; // The set of tested vertices
-int64_t facet_vertex[MAX_FACET]; // Incidence matrix
+int64_t facet_vertex[MAX_FACET+1]; // Incidence matrix
 double gauss_data[VERT][DIM+2]; // The memory for matrix
 double *matrix[VERT]; // The rows will be swapped many times
 double epsilon = 1.0 / (VERT*VERT); // For fabs(x) < epsilon
@@ -135,49 +135,6 @@ int vertices_number(){
     return num;
 }
 
-// Input is the characteristic vector of two tested vertices
-int is_edge(int64_t two_vertices){
-    int i, nf;
-    // Find all the facets which contain the two vertices
-    int64_t funion = 0;
-    for (i = 0, nf = 0; i < nfacets; i++){
-        if ((two_vertices & facet_vertex[i]) == two_vertices){
-            funion |= facet_vertex[i];
-            nf++;
-        }    
-    }
-    if (nf < nvert - dimension - 2) // Too few common facets
-        return 0;
-    // Check the affine independence of the vertices
-    // Init matrix
-    int nrows = 0;
-    int64_t v = 1;
-    for (i = 0; i < nvert; i++, v <<= 1){
-        if (v & funion){// Add vertex to matrix
-            for (int col = 0; col < dimension; col++)
-                matrix[nrows][col] = vertices[i][col];
-            matrix[nrows][dimension] = 1;
-            nrows++;
-        }
-    }
-    if (nrows <= dimension)
-        return 0;
-    return is_full_rank(nrows, dimension + 1, matrix);
-}
-
-/* Count edges
-   This way is more slow, than via incidence matrix
-    //edges = 0;
-    for (int i = 0; i < nvert-1; i++){
-        int64_t first = (int64_t)1 << i;
-        for (int j = i+1; j < nvert; j++){
-            int r = is_edge(first | ((int64_t)1 << j));
-            if (r > 0)
-                edges++;
-        }
-    }
-*/
-
 // Test if face is a facet.
 // ncols -- the number of vertices
 // Return 0 if it is a facet
@@ -235,7 +192,7 @@ int not_facet(int ncols, int **face) {
     // The last step: step == ncols - 1
     diag_entry = matrix[dimension][step];
     if (fabs(diag_entry) < epsilon)
-        return 2; // Not a facet (singular system)
+        return 1; // Has no solution, but may be appended for a good solution
     // Normalize diag_entry and row 'dimension'
     //matrix[dimension][step] = 1;
     matrix[dimension][ncols] /= diag_entry;
@@ -267,39 +224,37 @@ int not_facet(int ncols, int **face) {
 // startv -- the current index in 'vertices' (the set of all vertices)
 // curnv -- current number of vertices in curface (the tested face)
 // curvertexset is the characteristic vector of the set of vertices (negation of curface)
-void facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset){
-    // Check if the current set has a subset which is a facet
-    // Generally, we have to test not all the facets, but only the ones with smaller number of vertices
-    int t = curnv < k ? curnv : k-1;
-    // nfacets_for_testing[j] contains the number of facets with less or equal j vertices
-    for (int i = 0; i < nfacets_for_testing[curnv]; i++){  
-        // nfacets -> nfacets_for_testing
-        if ((curvertexset & facet_vertex[i]) == curvertexset)
-            return;
-    }
-
+int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset){
     // Evaluating the not_facet() for every new vertex is a bad idea
     // The solving of SLAE is expensive
 	if (curnv >= k){
         int isnt_facet = not_facet(curnv, curface);
-        //if (is_facet > 1) return;
         if (isnt_facet == 0){
-            //write_curface(k, curvertexset);
-            if (nfacets < MAX_FACET) // ATTENTION!!!
-                facet_vertex[nfacets] = curvertexset;
+            facet_vertex[nfacets] = curvertexset;
            	nfacets++;
-        }    
-        return;
+            if (nfacets > MAX_FACET) // ATTENTION!!!
+                return 1;
+        }
+        return 0;
 	}
 
     // Add one vertex to the curface and recursively call the faces_with_k_vert()
 	int64_t one_bit = 1;
 	int endv = nvert - k + curnv;
-	for (one_bit <<= startv; startv <= endv; one_bit <<= 1){
-		curface[curnv] = vertices[startv];
-        startv++;
-		facets_with_k_vert (k, startv, curnv+1, curvertexset - one_bit);
+    // nfacets_for_testing[j] contains the number of facets with less or equal j vertices
+    int i, i_max = nfacets_for_testing[curnv < k-1 ? curnv+1 : k-1];
+	for (one_bit <<= startv; startv <= endv; one_bit <<= 1, startv++){
+        int64_t newset = curvertexset - one_bit;
+        // Check if the current set has a subset which is a facet
+        // Generally, we have to test not all the facets, but only the ones with smaller number of vertices
+        for (i = 0; (i_max - i) * ((newset & facet_vertex[i]) - newset) != 0; i++) ;
+        if (i >= i_max){
+            curface[curnv] = vertices[startv];
+            if (facets_with_k_vert (k, startv+1, curnv+1, newset) == 1)
+                return 1;
+        }
 	}
+    return 0;
 }
 
 // Find all facets and save them into facet_vertex 
@@ -308,7 +263,8 @@ int find_facets (){
     nfacets_for_testing[0] = 0;
 	for (int k = 2; k <= dimension+1; k++){
         nfacets_for_testing[k-1] = nfacets;
-		facets_with_k_vert (k, 0, 0, ~(int64_t)0);
+		if (facets_with_k_vert (k, 0, 0, ~(int64_t)0) == 1)
+            return nfacets;
 		//fprintf (outf, "N(%d-cofaces) = %d\n", k, nfaces);
 		//printf ("N(%d-cofaces) = %d\n", k, nfaces);
     }
@@ -430,11 +386,16 @@ int main(int argc, char *argv[])
 
 	clock_t t;
 	t = clock();
-	find_facets();
+    find_facets();
 	t = clock() - t; 
+    write_facets(outf);
+	if (nfacets > MAX_FACET){
+        printf ("ERROR: The number of facets is bigger, than %d.\n", MAX_FACET);
+        fclose (outf);
+        return 0;
+    }    
 	fprintf (outf, "Facets: %d, %d clicks (%4.3f seconds)\n", nfacets, t, ((float)t)/CLOCKS_PER_SEC);
 	printf ("Facets: %d, %d clicks (%4.3f seconds)\n", nfacets, t, ((float)t)/CLOCKS_PER_SEC);
-    write_facets(outf);
     // Evaluating of the numbers of vertices, edges and ridges is much faster than for the facets
     int num_of_real_vertices = vertices_number();
     printf ("Polytope vertices: %d\n", num_of_real_vertices);
