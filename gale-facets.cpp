@@ -13,16 +13,7 @@
 #define MAX_VERT 64
 #define MAX_FACET 64
 
-int vertices[VERT][DIM]; // The input
-int dimension, nvert, nfacets;
-int nfacets_for_testing[DIM+1]; // Contains the num of facets with less or equal k vertices
-int *curface[VERT]; // The set of tested vertices
-int64_t facet_vertex[MAX_FACET+1]; // Incidence matrix
-double gauss_data[VERT][DIM+2]; // The memory for matrix
-double *matrix[VERT]; // The rows will be swapped many times
 double epsilon = 1.0 / (VERT*VERT); // For fabs(x) < epsilon
-//double coef[DIM+1]; // Result of the gauss
-FILE *outf; // The output file
 
 
 // Evaluate the number of edges of the incidence matrix 'vertex_facet'
@@ -98,7 +89,7 @@ int is_full_rank(int nrows, int ncols, double **M){
 }
 
 // Input is the vertex number from the array vertices
-int is_vertex(int vertex){
+int is_vertex(int vertex, int **vertices, int dimension, int nvert, int nfacets, int64_t *facet_vertex, double **matrix){
     int64_t vf = 0 | ((int64_t)1 << vertex);
     int i, nf;
     // Find all the facets which contain the vertex
@@ -128,10 +119,10 @@ int is_vertex(int vertex){
 }
 
 // For counting vertices it uses: dimension, nvert, vertices, facet_vertex.
-int vertices_number(){
+int vertices_number(int **vertices, int dimension, int nvert, int nfacets, int64_t *facet_vertex, double **matrix){
     int num = 0;
     for (int i = 0; i < nvert; i++)
-        num += is_vertex(i);
+        num += is_vertex(i, vertices, dimension, nvert, nfacets, facet_vertex, matrix);
     return num;
 }
 
@@ -140,7 +131,7 @@ int vertices_number(){
 // Return 0 if it is a facet
 // Return 1 if it is not a facet, but can be if we append some vertices
 // Return 2 or 3 if it is not a facet and cann't be a facet (after appending any vertices)
-int not_facet(int ncols, int **face) {
+int not_facet(int ncols, int dimension, int **face, double **matrix) {
     int row, col;
     // Init matrix. The columns are vertices (points) from the face
     for (row = 0; row < dimension; row++){
@@ -224,15 +215,15 @@ int not_facet(int ncols, int **face) {
 // startv -- the current index in 'vertices' (the set of all vertices)
 // curnv -- current number of vertices in curface (the tested face)
 // curvertexset is the characteristic vector of the set of vertices (negation of curface)
-int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset){
+int facets_with_k_vert (int **vertices, int dimension, int nvert, int *nfacets, int k, int startv, int curnv, int64_t curvertexset, int64_t *facet_vertex, double **matrix, int **curface, int *nfacets_for_testing){
     // Evaluating the not_facet() for every new vertex is a bad idea
     // The solving of SLAE is expensive
 	if (curnv >= k){
-        int isnt_facet = not_facet(curnv, curface);
+        int isnt_facet = not_facet(curnv, dimension, curface, matrix);
         if (isnt_facet == 0){
-            facet_vertex[nfacets] = curvertexset;
-           	nfacets++;
-            if (nfacets > MAX_FACET) // ATTENTION!!!
+            facet_vertex[*nfacets] = curvertexset;
+           	(*nfacets)++;
+            if ((*nfacets) > MAX_FACET) // ATTENTION!!!
                 return 1;
         }
         return 0;
@@ -250,7 +241,7 @@ int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset){
         for (i = 0; (i_max - i) * ((newset & facet_vertex[i]) - newset) != 0; i++) ;
         if (i >= i_max){
             curface[curnv] = vertices[startv];
-            if (facets_with_k_vert (k, startv+1, curnv+1, newset) == 1)
+            if (facets_with_k_vert (vertices, dimension, nvert, nfacets, k, startv+1, curnv+1, newset, facet_vertex, matrix, curface, nfacets_for_testing) == 1)
                 return 1;
         }
 	}
@@ -258,21 +249,21 @@ int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset){
 }
 
 // Find all facets and save them into facet_vertex 
-int find_facets (){
-	nfacets = 0;
+int find_facets (int **vertices, int dimension, int nvert, int *nfacets, int64_t *facet_vertex, double **matrix, int **curface, int *nfacets_for_testing){
+	*nfacets = 0;
     nfacets_for_testing[0] = 0;
 	for (int k = 2; k <= dimension+1; k++){
-        nfacets_for_testing[k-1] = nfacets;
-		if (facets_with_k_vert (k, 0, 0, ~(int64_t)0) == 1)
-            return nfacets;
+        nfacets_for_testing[k-1] = *nfacets;
+		if (facets_with_k_vert (vertices, dimension, nvert, nfacets, k, 0, 0, ~(int64_t)0, facet_vertex, matrix, curface, nfacets_for_testing) == 1)
+            return *nfacets;
 		//fprintf (outf, "N(%d-cofaces) = %d\n", k, nfaces);
 		//printf ("N(%d-cofaces) = %d\n", k, nfaces);
     }
-    return nfacets;
+    return *nfacets;
 }
 
 // Read Gale diagram from the file: dimension, nvert and vertices[][]
-int read_gale(char *fname){
+int read_gale(char *fname, int **vertices, int *dimension, int *nvert){
 	FILE *inf = fopen(fname, "r");
 	if (inf == NULL){
 		printf ("ERROR: Cann't open the file %s\n", fname);
@@ -288,29 +279,29 @@ int read_gale(char *fname){
 		return 2;
 
 	// Read dimension
-	dimension = strtol (buffer, &pch, 10);
-	if (dimension < 2 || dimension > DIM){
-		printf ("ERROR: dimension = %d, but must be in [2, %d]\n", dimension, DIM);
+	*dimension = strtol (buffer, &pch, 10);
+	if (*dimension < 2 || *dimension > DIM){
+		printf ("ERROR: dimension = %d, but must be in [2, %d]\n", *dimension, DIM);
 		return 3;
 	}
-	printf ("dim = %d; ", dimension);
+	printf ("dim = %d; ", *dimension);
 
 	// Read dimension
-	nvert = strtol (pch, &pch, 10);
-	if (nvert < 2 || nvert > VERT){
-		printf ("ERROR: number of vertices = %d, but must be in [2, %d]\n", nvert, VERT);
+	*nvert = strtol (pch, &pch, 10);
+	if (*nvert < 2 || *nvert > VERT){
+		printf ("ERROR: number of vertices = %d, but must be in [2, %d]\n", *nvert, VERT);
 		return 4;
 	}
-	printf ("vert = %d\n", nvert);
+	printf ("vert = %d\n", *nvert);
 	
 	int i, j;
-	for (i = 0; i < nvert; i++){
+	for (i = 0; i < *nvert; i++){
 		pch = fgets (buffer, LINE_SIZE, inf);
 		if ( pch == NULL){
 			printf ("ERROR: unexpected EOF\n");
 			return 2;
 		}	
-		for (j = 0; j < dimension; j++){
+		for (j = 0; j < *dimension; j++){
 			vertices[i][j] = strtol (pch, &pch, 10);
 			if (fabs(vertices[i][j]) > MAX_NUMBERS){
 				printf ("ERROR with MAX_NUMBERS: in line %d of %s\n", i+2, fname);
@@ -324,7 +315,7 @@ int read_gale(char *fname){
 }	
 
 // Write vertices[][] to file
-void write_gale(FILE *f){
+void write_gale(FILE *f, int **vertices, int dimension, int nvert){
 	fprintf (f, "Source:\n%d %d\n", dimension, nvert);
 	int i, j;
 	for (i = 0; i < nvert; i++){
@@ -336,7 +327,7 @@ void write_gale(FILE *f){
 }
 
 // Write facets to file
-void write_facets(FILE *f){
+void write_facets(FILE *f, int64_t *facet_vertex, int nfacets, int nvert){
     fprintf (f, "Facets: %d\n", nfacets);
     int i, j;
     for (i = 0; i < nfacets; i++){
@@ -366,29 +357,40 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
-	if (read_gale(argv[1]))
+    int vertices_data[VERT][DIM]; // The input
+    int *vertices[VERT];
+    for (int i = 0; i < VERT; i++)
+        vertices[i] = vertices_data[i];
+    int dimension, nvert, nfacets; // The most important parameters of the Gale diagram
+	if (read_gale(argv[1], vertices, &dimension, &nvert))
 		return 1;
 		
 	char outfname[128];
 	sprintf (outfname, "%s.out", argv[1]);
+    FILE *outf; // The output file
 	outf = fopen(outfname, "w");
 	if (outf == NULL){
 		printf ("ERROR: Cann't open file %s\n", outfname);
 		return 1;
 	}
-	printf ("Output is saved in %s\n", outfname);
+	printf ("Output is saved in %s. Vers 17\n", outfname);
         
-	write_gale(outf);
+	write_gale(outf, vertices, dimension, nvert);
 
+    double gauss_data[VERT][DIM+2]; // The memory for matrix
+    double *matrix[VERT]; // The rows will be swapped many times
     // Init matrix pointers for Gauss
     for (int i = 0; i < VERT; i++)
         matrix[i] = gauss_data[i];
+    int64_t facet_vertex[MAX_FACET+1]; // Incidence matrix
+    int nfacets_for_testing[DIM+1]; // Contains the num of facets with less or equal k vertices
+    int *curface[VERT]; // The set of tested vertices
 
 	clock_t t;
 	t = clock();
-    find_facets();
+    find_facets(vertices, dimension, nvert, &nfacets, facet_vertex, matrix, curface, nfacets_for_testing);
 	t = clock() - t; 
-    write_facets(outf);
+    write_facets(outf, facet_vertex, nfacets, nvert);
 	if (nfacets > MAX_FACET){
         printf ("ERROR: The number of facets is bigger, than %d.\n", MAX_FACET);
         fclose (outf);
@@ -397,7 +399,7 @@ int main(int argc, char *argv[])
 	fprintf (outf, "Facets: %d, %d clicks (%4.3f seconds)\n", nfacets, t, ((float)t)/CLOCKS_PER_SEC);
 	printf ("Facets: %d, %d clicks (%4.3f seconds)\n", nfacets, t, ((float)t)/CLOCKS_PER_SEC);
     // Evaluating of the numbers of vertices, edges and ridges is much faster than for the facets
-    int num_of_real_vertices = vertices_number();
+    int num_of_real_vertices = vertices_number(vertices, dimension, nvert, nfacets, facet_vertex, matrix);
     printf ("Polytope vertices: %d\n", num_of_real_vertices);
     fprintf (outf, "Polytope vertices: %d\n", num_of_real_vertices);
     if (num_of_real_vertices == nvert){
