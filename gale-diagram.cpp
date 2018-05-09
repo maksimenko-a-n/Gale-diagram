@@ -361,11 +361,68 @@ int edges_number(const int vertices, const int facets, const vector<int64_t> &ve
             for (j = 0; j < vertices; j++){
                 if ((common_facets & vertex_facet[j]) == common_facets && (j - v1) * (j - v2) != 0) 
                     // if common_facets is contained in vertex_facet[j] and j != v1 and j != v2
-                    goto NextEdge;
+                    break;
             }
-            N_edges++;
-            NextEdge: ;
+            if (j >= vertices)
+                N_edges++;
         }    
     }
     return N_edges;
+}
+
+// Evaluate the number of edges of the incidence matrix 'vertex_facet'
+// For the BIG number of facets ( > 64)
+int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet)
+{
+	int v1, v2, j, s;
+    int size = (facets - 1) / 64 + 1;
+    vector<int64_t> v1_facets(size,0), common_facets(size,0);
+
+    int N_edges = 0;
+	for (v1 = 0; v1 < vertices-1; v1++) {
+        for (s = 0; s < size; s++)
+            v1_facets[s] = vertex_facet[v1][s];
+        for (v2 = v1+1; v2 < vertices; v2++){
+            for (s = 0; s < size; s++)
+                common_facets[s] = v1_facets[s] & vertex_facet[v2][s];
+            for (j = 0; j < vertices; j++){
+                if ((j - v1) * (j - v2) != 0){ 
+                    for (s = 0; s < size; s++){
+                        if ((common_facets[s] & vertex_facet[j][s]) != common_facets[s])
+                            break;
+                    }        
+                    if (s == size)
+                        break;
+                }    
+            }
+            if (j >= vertices)
+                N_edges++;
+        }    
+    }
+    return N_edges;
+}
+
+// Transpose facet_vertex to vertex_facet
+vector< vector<int64_t> > transpose(const int nfacets, const int nvert, vector<int64_t> &facet_vertex){
+    int size = (nfacets - 1) / 64 + 1;
+    vector< vector<int64_t> > vertex_facet(nvert, vector<int64_t>(size,0)); // Incidence matrix
+    int64_t v = 1; 
+    for (int i = 0; i < nvert; i++, v <<= 1){
+        //vertex_facet[i] = 0;
+        int64_t f = 1; 
+        int s = 0;
+        for (int j = 0; j < nfacets; j++, f <<= 1){
+            if (f == 0){
+                s++;
+                f = 1;
+                if (s >= size){
+                    printf ("ERROR: s >= size\n");
+                    exit(2);
+                }
+            }
+            if (facet_vertex[j] & v)
+                vertex_facet[i][s] |= f;
+        }
+    }
+    return vertex_facet;
 }

@@ -10,7 +10,7 @@
 #define MAX_DIM 16
 #define MAX_VERT 64
 #define MAX_NUMBERS 2
-#define MAX_FACET 64
+#define MAX_FACET 1024
 #define LINE_SIZE 1024
 //#define BIG 4503599627370496*12
 //12*15
@@ -20,6 +20,8 @@ using namespace std;
 static double epsilon = sqrt(DBL_EPSILON); // For fabs(x) < epsilon
 int is_full_rank(int nrows, int ncols, double **M);
 int edges_number(const int vertices, const int facets, const vector<int64_t> &vertex_facet);
+int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet);
+vector< vector<int64_t> > transpose(const int nfacets, const int nvert, vector<int64_t> &facet_vertex);
 
 // The Gale diagram
 class Gale_diagram{
