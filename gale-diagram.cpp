@@ -1,7 +1,7 @@
 #include "gale-diagram.hpp"
 
 Gale_diagram::Gale_diagram(){
-//    epsilon = sqrt(DBL_EPSILON); 
+    gauss_epsilon = sqrt(DBL_EPSILON); // For fabs(x) < epsilon
     matrix_data = NULL; 
 }
 
@@ -118,6 +118,45 @@ void Gale_diagram::write_facets(FILE *outf){
 }
 
 
+// Gauss method: Forward Elimination
+// Return 1 if the rank of M is smaller than ncols-1
+// Otherwise return 0
+inline int Gale_diagram::forward_elimination(int nrows, int ncols, double **M){
+    int step, row, col;
+    double diag_entry, y, *pt;
+    for (step = 0; step < ncols-1; step++){
+        // Find first nonzero element in the column 'step'
+        for (row = step; row < nrows; row++){
+            diag_entry = M[row][step];
+            if (fabs(diag_entry) >= gauss_epsilon)
+                break; // We have found a nonzero element
+        }
+        // If we cann't find nonzero element
+        if (row >= nrows)
+            return 1; // Isn't full rank
+        // Normalize the nonzero element and the row
+        if (diag_entry != 1){
+            //M[step][step] = 1;
+            for (col = step+1; col < ncols; col++)
+                M[row][col] /= diag_entry;
+        }
+        if (row != step){// Swap rows
+            pt = M[row];
+            M[row] = M[step];
+            M[step] = pt;
+        }    
+        for (row = step + 1; row < nrows; row++){
+            y = M[row][step];
+            if (fabs(y) >= gauss_epsilon){ // subtract step-th and row-th rows
+                //M[row][step] = 0;
+                for (col = step+1; col < ncols; col++)
+                    M[row][col] -= y * M[step][col];
+            }
+        }
+    }
+    return 0;
+}
+
 // Test if curface is a facet.
 // ncols -- the number of vertices
 // Return 0 if it is a facet
@@ -137,57 +176,34 @@ int Gale_diagram::not_facet(int ncols){ //, int64_t x){
 
     // Gauss method
     // Stage 1: Forward Elimination
+    if (forward_elimination(dimension, ncols, matrix) != 0)
+        return 2; // Not a facet (singular system)
     int step;
-    double *pt;
-    double diag_entry, y;
+    double y;
     for (step = 0; step < ncols-1; step++){
-        // Find first nonzero element in the column 'step'
-        for (row = step; row <= dimension; row++){
-            diag_entry = matrix[row][step];
-            if (fabs(diag_entry) >= epsilon)
-                break;
-        }
-        // If we cann't find nonzero element
-        if (row >= dimension)
-            return 2; // Not a facet (singular system)
-        // Normalize diag_entry and row 'row'
-        if (diag_entry != 1){
-            //matrix[row][step] = 1;
+        y = matrix[dimension][step];
+        if (fabs(y) >= gauss_epsilon){ // subtract step-th and dimension-th rows
             for (col = step+1; col < ncols; col++)
-                matrix[row][col] /= diag_entry;
-        }
-        if (row != step){// Swap rows
-            pt = matrix[row];
-            matrix[row] = matrix[step];
-            matrix[step] = pt;
-        }    
-        for (row = step + 1; row <= dimension; row++){
-            y = matrix[row][step];
-            if (fabs(y) >= epsilon){ // subtract step-th and row-th rows
-                for (col = step+1; col < ncols; col++)
-                    matrix[row][col] -= y * matrix[step][col];
-                //matrix[row][step] = 0;
-                //matrix[row][ncols] -= 0;
-            }
+                matrix[dimension][col] -= y * matrix[step][col];
         }
     }
     
     // The last step: step == ncols - 1
-    diag_entry = matrix[dimension][step];
-    if (fabs(diag_entry) < epsilon){
+    double diag_entry = matrix[dimension][step];
+    if (fabs(diag_entry) < gauss_epsilon){
         return 1; // Has no solution, but may be appended for a good solution
     }
     // Normalize diag_entry and row 'dimension'
     //matrix[dimension][step] = 1;
     matrix[dimension][ncols] /= diag_entry;
     if (dimension != step){ // Swap rows
-        pt = matrix[dimension];
+        double *pt = matrix[dimension];
         matrix[dimension] = matrix[step];
         matrix[step] = pt;
     }    
     // Test for impossibility of solution
     for (row = step + 1; row <= dimension; row++){
-        if (fabs(matrix[row][step]) >= epsilon) // Looks like 0 * x == c, where c != 0.
+        if (fabs(matrix[row][step]) >= gauss_epsilon) // Looks like 0 * x == c, where c != 0.
             return 1; // Has no solution, but can be appended for a good solution
     }
     
@@ -196,7 +212,7 @@ int Gale_diagram::not_facet(int ncols){ //, int64_t x){
     double value;
     for (step = ncols - 1; step >= 0; step--){
         value = matrix[step][ncols];
-        if (value < epsilon){ // if value is nonpositive
+        if (value < gauss_epsilon){ // if value is nonpositive
             return 3; // Singular or will be singular (if we append some points to it)
         }
         for (row = step - 1; row >= 0; row--)
@@ -256,52 +272,6 @@ int Gale_diagram::find_facets (){
     return facet_vertex.size();
 }
 
-
-// Use the Gauss method for checking if the rank of the matrix M is equal to ncols
-// Return 1 if the rank is equal to ncols, return 0 otherwise
-int is_full_rank(int nrows, int ncols, double **M){
-    // Gauss method: Forward Elimination
-    int step, row, col;
-    double diag_entry, y, *pt;
-    for (step = 0; step < ncols-1; step++){
-        // Find first nonzero element in the column 'step'
-        for (row = step; row < nrows; row++){
-            diag_entry = M[row][step];
-            if (fabs(diag_entry) >= epsilon)
-                break;
-        }
-        // If we cann't find nonzero element
-        if (row >= nrows)
-            return 0; // Isn't full rank
-        if (row != step){// Swap rows
-            pt = M[row];
-            M[row] = M[step];
-            M[step] = pt;
-        }    
-        // Normalize diag_entry and row 'step'
-        if (diag_entry != 1){
-            //M[step][step] = 1;
-            for (col = step+1; col < ncols; col++)
-                M[step][col] /= diag_entry;
-        }
-        for (row = step + 1; row < nrows; row++){
-            y = M[row][step];
-            if (fabs(y) >= epsilon){ // subtract step-th and row-th rows
-                //M[row][step] = 0;
-                for (col = step+1; col < ncols; col++)
-                    M[row][col] -= y * M[step][col];
-            }
-        }
-    }
-    // For the last step: step = ncols-1
-    for (row = step; row < nrows; row++){
-        if (fabs(M[row][step]) >= epsilon)
-            return 1; // Full rank matrix
-    }
-    // If we cann't find nonzero element
-    return 0; // Isn't full rank
-}
-
 // Input is the vertex number from the array vertices
 int Gale_diagram::is_vertex(int vertex){
     int64_t vf = 1;
@@ -332,7 +302,16 @@ int Gale_diagram::is_vertex(int vertex){
     }
     if (nrows <= dimension)
         return 0; // Too few rows
-    return is_full_rank(nrows, dimension + 1, matrix);
+    // Gauss method: Forward Elimination
+    if (forward_elimination(nrows, dimension + 1, matrix) != 0)
+        return 0; // Isn't full rank
+    // The last step of Forward Elimination:
+    for (int row = dimension; row < nrows; row++){
+        if (fabs(matrix[row][dimension]) >= gauss_epsilon)
+            return 1; // Full rank matrix
+    }
+    // If we cann't find nonzero element
+    return 0; // Isn't full rank
 }
 
 int Gale_diagram::vertices_number(){
@@ -415,10 +394,6 @@ vector< vector<int64_t> > transpose(const int nfacets, const int nvert, vector<i
             if (f == 0){
                 s++;
                 f = 1;
-                if (s >= size){
-                    printf ("ERROR: s >= size\n");
-                    exit(2);
-                }
             }
             if (facet_vertex[j] & v)
                 vertex_facet[i][s] |= f;

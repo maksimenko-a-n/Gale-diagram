@@ -38,6 +38,7 @@ int main(int argc, char *argv[])
 	gale.write_facets (outf);
     int num_of_real_vertices = gale.vertices_number();
     printf ("Vertices = %d\n", num_of_real_vertices);
+    fprintf (outf, "Vertices = %d\n", num_of_real_vertices);
 
     int nvert = gale.vertices.size();
     if (num_of_real_vertices == nvert){
@@ -46,7 +47,7 @@ int main(int argc, char *argv[])
         vector< vector<int64_t> > vertex_facet = transpose(nfacets, nvert, gale.facet_vertex);
         int edges = edges_number_long(nvert, nfacets, vertex_facet);
         printf ("Edges: %d, Ridges: %d\n", edges, ridges);
-        //fprintf (outf, "Edges: %d, Ridges: %d\n", edges, ridges);
+        fprintf (outf, "Edges: %d, Ridges: %d\n", edges, ridges);
     }
 
 	fclose (outf);
