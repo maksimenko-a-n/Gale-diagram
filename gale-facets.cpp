@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <time.h>
 #include <stdint.h>  // int64_t
+#include <float.h>  // DBL_EPSILON
 
 #define DIM 8
 #define VERT 32
@@ -12,8 +13,11 @@
 #define MAX_NUMBERS 2
 #define MAX_VERT 64
 #define MAX_FACET 64
+//#define BIG 4503599627370496*12
+//12*15
 
-double epsilon = 1.0 / (VERT*VERT); // For fabs(x) < epsilon
+//double epsilon = 1.0 / (VERT*VERT); // For fabs(x) < epsilon
+double epsilon = sqrt(DBL_EPSILON); // For fabs(x) < epsilon
 
 
 // Evaluate the number of edges of the incidence matrix 'vertex_facet'
@@ -182,8 +186,9 @@ int not_facet(int ncols, int dimension, int **face, double **matrix) {
     
     // The last step: step == ncols - 1
     diag_entry = matrix[dimension][step];
-    if (fabs(diag_entry) < epsilon)
+    if (fabs(diag_entry) < epsilon){
         return 1; // Has no solution, but may be appended for a good solution
+    }
     // Normalize diag_entry and row 'dimension'
     //matrix[dimension][step] = 1;
     matrix[dimension][ncols] /= diag_entry;
@@ -203,8 +208,9 @@ int not_facet(int ncols, int dimension, int **face, double **matrix) {
     double value;
     for (step = ncols - 1; step >= 0; step--){
         value = matrix[step][ncols];
-        if (value < epsilon) // if value is nonpositive
+        if (value < epsilon){ // if value is nonpositive
             return 3; // Singular or will be singular (if we append some points to it)
+        }
         for (row = step - 1; row >= 0; row--)
             matrix[row][ncols] -= matrix[row][step] * value;
     }    
