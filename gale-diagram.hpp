@@ -10,7 +10,7 @@
 #define MAX_DIM 16
 #define MAX_VERT 64
 #define MAX_NUMBERS 2
-#define MAX_FACET 1024
+#define MAX_FACET 65536
 #define LINE_SIZE 1024
 //#define BIG 4503599627370496*12
 //12*15

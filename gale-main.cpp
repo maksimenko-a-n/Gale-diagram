@@ -51,14 +51,20 @@ int main(int argc, char *argv[])
 
     if (num_of_real_vertices == nvert){
         fprintf (outf, "Ridges:\n");
+        t = clock();
         int ridges = edges_number(nfacets, nvert, gale.facet_vertex, outf);
         fprintf (outf, "Ridges = %d\n", ridges);
         // Transpose facet_vertex to vertex_facet
         vector< vector<int64_t> > vertex_facet = transpose(nfacets, nvert, gale.facet_vertex);
         fprintf (outf, "Edges:\n");
         int edges = edges_number_long(nvert, nfacets, vertex_facet, outf);
+        t = clock() - t;
         fprintf (outf, "Edges = %d\n", edges);
-        printf ("Edges: %d, Ridges: %d\n", edges, ridges);
+        printf ("Edges: %d, Ridges: %d (elapsed time: %4.3f sec)\n", edges, ridges, ((float)t)/CLOCKS_PER_SEC);
+        if (edges * 2 == nvert * (nvert-1))
+            printf ("2-Neighborly polytope\n");
+        if (ridges * 2 == nfacets * (nfacets-1))
+            printf ("Dual 2-neighborly polytope\n");
     }
     else{
         printf ("This is not convex polytope!\n");
