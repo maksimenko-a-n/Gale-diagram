@@ -66,6 +66,7 @@ int Gale_diagram::read(const char *filename){
 	//printf ("vert = %d\n", nvert);
 	
     vertices.clear(); // Remove all old points
+	char *new_pch;
 	int i, j;
 	for (i = 0; i < nvert; i++){
 		pch = fgets (buffer, LINE_SIZE, inf);
@@ -75,11 +76,12 @@ int Gale_diagram::read(const char *filename){
 		}	
         vertices.push_back(vector<int>());
 		for (j = 0; j < dimension; j++){
-			int x = strtol (pch, &pch, 10);
-			if (fabs(x) > MAX_NUMBERS){
+			int x = strtol (pch, &new_pch, 10);
+			if (pch == new_pch || fabs(x) > MAX_NUMBERS){
 				printf ("ERROR in line %d of %s: coordinates of points must be integers in [%d, %d]\n", i+2, filename, -MAX_NUMBERS, MAX_NUMBERS);
 				return 4;
 			}
+            pch = new_pch;
             vertices[i].push_back(x);
 		}
 	}
@@ -105,7 +107,7 @@ void Gale_diagram::write(FILE *outf){
 void Gale_diagram::write_facets(FILE *outf){
     int nfacets = facet_vertex.size();
     int nvert = vertices.size();
-    fprintf (outf, "Facets: %d\n", nfacets);
+    fprintf (outf, "Facets %d:\n", nfacets);
     int i, j;
     for (i = 0; i < nfacets; i++){
         int64_t mask = facet_vertex[i];
@@ -314,16 +316,44 @@ int Gale_diagram::is_vertex(int vertex){
     return 0; // Isn't full rank
 }
 
-int Gale_diagram::vertices_number(){
+int Gale_diagram::vertices_number(FILE *outf){
     int num = 0;
-    for (int i = 0; i < vertices.size(); i++)
-        num += is_vertex(i);
+    vector<int> bad_vertices;
+    for (int i = 0; i < vertices.size(); i++){
+        if (is_vertex(i))
+            num++;
+        else
+            bad_vertices.push_back(i);
+    }
+    if (outf != NULL){
+        if (bad_vertices.size() > 0){
+            fprintf (outf, "Bad vertices:");
+            for (int i = 0; i < bad_vertices.size(); i++)
+                fprintf (outf, " %2d", bad_vertices[i]);
+            fprintf (outf, "\n");
+        }
+    }
     return num;
 }
 
 
+// Write 0-1 matrix with cols columns (cols <= 64)
+void write_matrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_matrix){
+	int nrows = inc_matrix.size();
+    const int64_t *data = inc_matrix.data();
+	fprintf (wfile, "%d %d\n", nrows, ncols);
+	for (int i = 0; i < nrows; i++){
+		int64_t x = data[i];
+		for (int j = 0; j < ncols; j++, x >>= 1)
+			fprintf (wfile, " %d", x&1);
+		fprintf (wfile, "\n");
+	}
+	//fprintf (wfile, "end\n");
+}
+
+
 // Evaluate the number of edges of the incidence matrix 'vertex_facet'
-int edges_number(const int vertices, const int facets, const vector<int64_t> &vertex_facet)
+int edges_number(const int vertices, const int facets, const vector<int64_t> &vertex_facet, FILE *outf)
 {
 	int v1, v2, j;
     int64_t v1_facets, common_facets;
@@ -342,8 +372,11 @@ int edges_number(const int vertices, const int facets, const vector<int64_t> &ve
                     // if common_facets is contained in vertex_facet[j] and j != v1 and j != v2
                     break;
             }
-            if (j >= vertices)
+            if (j >= vertices){
+                if (outf != NULL)
+                    fprintf (outf, " %2d %2d\n", v1, v2);
                 N_edges++;
+            }    
         }    
     }
     return N_edges;
@@ -351,31 +384,35 @@ int edges_number(const int vertices, const int facets, const vector<int64_t> &ve
 
 // Evaluate the number of edges of the incidence matrix 'vertex_facet'
 // For the BIG number of facets ( > 64)
-int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet)
+int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet, FILE *outf)
 {
 	int v1, v2, j, s;
     int size = (facets - 1) / 64 + 1;
-    vector<int64_t> v1_facets(size,0), common_facets(size,0);
+    const int64_t *v1_facets, *v2_facets;
+    vector<int64_t> common_facets(size,0);
 
     int N_edges = 0;
 	for (v1 = 0; v1 < vertices-1; v1++) {
-        for (s = 0; s < size; s++)
-            v1_facets[s] = vertex_facet[v1][s];
+        v1_facets = vertex_facet[v1].data();
         for (v2 = v1+1; v2 < vertices; v2++){
+            v2_facets = vertex_facet[v2].data();
             for (s = 0; s < size; s++)
-                common_facets[s] = v1_facets[s] & vertex_facet[v2][s];
+                common_facets[s] = v1_facets[s] & v2_facets[s];
             for (j = 0; j < vertices; j++){
                 if ((j - v1) * (j - v2) != 0){ 
                     for (s = 0; s < size; s++){
                         if ((common_facets[s] & vertex_facet[j][s]) != common_facets[s])
                             break;
                     }        
-                    if (s == size)
-                        break;
+                    if (s == size) // common_facets is contained in vertex_facet[j]
+                        break; // (v1, v2) is not an edge
                 }    
             }
-            if (j >= vertices)
+            if (j >= vertices){
+                if (outf != NULL)
+                    fprintf (outf, " %2d %2d\n", v1, v2);
                 N_edges++;
+            }    
         }    
     }
     return N_edges;

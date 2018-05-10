@@ -17,8 +17,9 @@
 
 using namespace std; 
 
-int edges_number(const int vertices, const int facets, const vector<int64_t> &vertex_facet);
-int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet);
+void write_matrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_matrix);
+int edges_number(const int vertices, const int facets, const vector<int64_t> &vertex_facet, FILE *outf = NULL);
+int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet, FILE *outf = NULL);
 vector< vector<int64_t> > transpose(const int facets, const int vertices, vector<int64_t> &facet_vertex);
 
 // The Gale diagram
@@ -41,7 +42,7 @@ public:
     int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset); // Find all facets with k vertices
     int find_facets (); // Find all facets
     int is_vertex(int vertex);
-    int vertices_number();
+    int vertices_number(FILE *outf = NULL);
 private:
     double gauss_epsilon; // For fabs(x) < epsilon
     int nfacets_for_testing[MAX_DIM+1]; // Contains the num of facets with less or equal k vertices
