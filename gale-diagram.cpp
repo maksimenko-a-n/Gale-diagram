@@ -297,7 +297,12 @@ int Gale_diagram::is_vertex(int p){
             nf++; // nf is the number of facets which contains the vertex
         }    
     }
-    int64_t mask = ((int64_t)1 << nvert) - 1;
+    int64_t mask = 1;
+    if (nvert < MAX_VERT)
+        mask = (mask << nvert) - 1;
+    else
+        mask = ~(int64_t)0;
+
     if ((intersection & mask) != vf)
         return 0; // Intersection of facets isn't coincide with the vertex
     if (nf < nvert - dimension - 1)
