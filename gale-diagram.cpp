@@ -263,53 +263,63 @@ int Gale_diagram::facets_with_k_vert (int k, int startv, int curnv, int64_t curv
 // Find all facets and save them into facet_vertex 
 int Gale_diagram::find_facets (){
 	facet_vertex.clear();
+	int64_t one_bit = 1;
     nfacets_for_testing[0] = 0;
+    int v, j;
+    for (v = 0; v < vertices.size(); v++){
+        for (j = 0; j < dimension && vertices[v][j] == 0; j++) ;
+        if (j == dimension)
+            facet_vertex.push_back((~(int64_t)0) - (one_bit << v));
+    }
 	for (int k = 2; k <= dimension+1; k++){
         nfacets_for_testing[k-1] = facet_vertex.size();
 		if (facets_with_k_vert (k, 0, 0, ~(int64_t)0) == 1)
             return facet_vertex.size();
-		//fprintf (outf, "N(%d-cofaces) = %d\n", k, nfaces);
 		//printf ("N(%d-cofaces) = %d\n", k, nfaces);
     }
     return facet_vertex.size();
 }
 
 // Input is the vertex number from the array vertices
-int Gale_diagram::is_vertex(int vertex){
+int Gale_diagram::is_vertex(int p){
+    int nvert = vertices.size();
+    if (nvert < dimension + 2)
+        return 0; // Too few vertices
     int64_t vf = 1;
-    vf <<= vertex;
+    vf <<= p;
     int i, nf;
     // Find all the facets which contain the vertex
-    int64_t funion = 0;
+    int64_t intersection = ~(int64_t)0;
     int nfacets = facet_vertex.size();
     for (i = 0, nf = 0; i < nfacets; i++){
         if (vf & facet_vertex[i]){
-            funion |= facet_vertex[i];
+            intersection &= facet_vertex[i];
             nf++; // nf is the number of facets which contains the vertex
         }    
     }
-    int nvert = vertices.size();
-    if (nf < nvert - dimension - 1) // Too few common facets
-        return 0;
-    // Check the affine independence of the vertices in funion
+    int64_t mask = ((int64_t)1 << nvert) - 1;
+    if ((intersection & mask) != vf)
+        return 0; // Intersection of facets isn't coincide with the vertex
+    if (nf < nvert - dimension - 1)
+        return 0; // Too few common facets
+    // Check the rank of the vertices (without vertex p)
     // Init the matrix
     int nrows = 0;
-    for (i = 0, vf = 1; i < nvert; i++, vf <<= 1){
-        if (vf & funion){// Add vertex to matrix
-            for (int col = 0; col < dimension; col++)
+    for (i = 0; i < nvert; i++){
+        if (i != p){// Add vertex to matrix
+            for (int col = 0; col < dimension; col++){
                 matrix[nrows][col] = vertices[i][col];
-            matrix[nrows][dimension] = 1;
+            }    
+            //matrix[nrows][dimension] = 1;
             nrows++;
         }
     }
-    if (nrows <= dimension)
-        return 0; // Too few rows
     // Gauss method: Forward Elimination
-    if (forward_elimination(nrows, dimension + 1, matrix) != 0)
+    if (forward_elimination(nrows, dimension, matrix) != 0)
         return 0; // Isn't full rank
     // The last step of Forward Elimination:
-    for (int row = dimension; row < nrows; row++){
-        if (fabs(matrix[row][dimension]) >= gauss_epsilon)
+    for (int row = dimension-1; row < nrows; row++){
+        if (fabs(matrix[row][dimension-1]) >= gauss_epsilon)
             return 1; // Full rank matrix
     }
     // If we cann't find nonzero element

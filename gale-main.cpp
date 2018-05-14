@@ -57,7 +57,7 @@ int main(int argc, char *argv[])
 	gale.write_facets(outf); // Write facets into the file outf
     int nvert = gale.vertices.size();
     fprintf (outf, "Facets-vertices incidence matrix:\n");
-    write_matrix (outf, nvert, gale.facet_vertex);
+    write_incmatrix (outf, nvert, gale.facet_vertex);
     // Find the real number of vertices of the appropriate convex polytope
     int num_of_real_vertices = gale.vertices_number(outf);
     //printf ("Vertices = %d\n", num_of_real_vertices);
