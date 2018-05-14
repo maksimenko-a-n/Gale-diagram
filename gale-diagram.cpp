@@ -326,24 +326,16 @@ int Gale_diagram::is_vertex(int p){
     return 0; // Isn't full rank
 }
 
-int Gale_diagram::vertices_number(FILE *outf){
-    int num = 0;
+int Gale_diagram::is_polytope(FILE *outf){
     vector<int> bad_vertices;
     for (int i = 0; i < vertices.size(); i++){
-        if (is_vertex(i))
-            num++;
-        else
-            bad_vertices.push_back(i);
-    }
-    if (outf != NULL){
-        if (bad_vertices.size() > 0){
-            fprintf (outf, "Bad vertices:");
-            for (int i = 0; i < bad_vertices.size(); i++)
-                fprintf (outf, " %2d", bad_vertices[i]);
-            fprintf (outf, "\n");
+        if (is_vertex(i) == 0){
+            if (outf != NULL)
+                fprintf (outf, "Bad vertex: %d\n", i);
+            return 0;
         }
     }
-    return num;
+    return 1;
 }
 
 

@@ -10,7 +10,7 @@
 #define MAX_DIM 16 // The maximum dimension of the Gale diagram (GD)
 #define MAX_NUMBERS 2 // The maximum abs value of the coordinates of points in GD
 #define MAX_VERT 64 // The bit length of the type int64_t
-#define MAX_FACET 65536
+#define MAX_FACET 16384 // To avoid the memory overfull
 #define LINE_SIZE 1024 // The maximum len of a line in the input file
 
 using namespace std; 
@@ -44,7 +44,7 @@ public:
     int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset); // Find all facets with k vertices
     int find_facets (); // Find all facets
     int is_vertex(int p); // Test the point p from the array vertices
-    int vertices_number(FILE *outf = NULL); 
+    int is_polytope(FILE *outf = NULL); 
 private:
     double gauss_epsilon; // For fabs(x) < epsilon
     int nfacets_for_testing[MAX_DIM+1]; // Contains the num of facets with less or equal k vertices

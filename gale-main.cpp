@@ -31,11 +31,10 @@ int main(int argc, char *argv[])
     
     Gale_diagram gale; // The Gale diagram
     if(gale.read(argv[1])){
-        // Errors in the input file
-        return 1;
+        return 1; // Errors in the input file
     }
 
-	char outfname[128]; // The output file name
+	char outfname[256]; // The output file name
 	sprintf (outfname, "%s.out", argv[1]);
     FILE *outf; // The output file
 	outf = fopen (outfname, "w");
@@ -58,15 +57,9 @@ int main(int argc, char *argv[])
     int nvert = gale.vertices.size();
     fprintf (outf, "Facets-vertices incidence matrix:\n");
     write_incmatrix (outf, nvert, gale.facet_vertex);
-    // Find the real number of vertices of the appropriate convex polytope
-    int num_of_real_vertices = gale.vertices_number(outf);
-    //printf ("Vertices = %d\n", num_of_real_vertices);
-    //fprintf (outf, "Vertices = %d\n", num_of_real_vertices);
-
-    if (num_of_real_vertices == nvert){
-        fprintf (outf, "Ridges:\n");
+    // Check if the Gale diagram corresponds to a convex polytope
+    if (gale.is_polytope(outf)){
         t = clock();
-        //int ridges = 0;
         int ridges = edges_number(nfacets, nvert, gale.facet_vertex);
         fprintf (outf, "Ridges = %d\n", ridges);
         // Transpose facet_vertex to vertex_facet
