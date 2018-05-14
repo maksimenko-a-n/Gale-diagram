@@ -3,17 +3,30 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define DIM 8
+#define DIM 32
 #define VERT 64
 
 int nvert, dimension;
 int vertices[VERT][DIM];
 
+// Gen all vectors with coordinates from {-2,-1,1,2}
+void gen_12vectors(char *name, int d){
+    dimension = d;
+    nvert = 1 << (2*dimension);
+	sprintf (name, "%dd%dv.g", dimension, nvert);
+	int i, j, x;
+	for (i = 0; i < nvert; i++){
+        x = i;
+		for (j = 0; j < dimension; j++, x >>= 2)
+            vertices[i][j] = ((x&2) - 1) * (1 + (x&1));
+	}	
+}
 
-void gen_qube_vertices(char *name, int d){
+// Gen vertices of {-1,1}-qube
+void gen_cube_vertices(char *name, int d){
     dimension = d;
     nvert = (1 << dimension);
-	sprintf (name, "%dd%dvq.g", dimension, nvert);
+	sprintf (name, "%dd%dvc.g", dimension, nvert);
 	int i, j, x;
 	for (i = 0; i < nvert; i++){
         x = i;
@@ -22,6 +35,25 @@ void gen_qube_vertices(char *name, int d){
 	}	
 }
 
+// Gen vertices of the simplex with multiplicity mult
+void gen_simplex_vertices(char *name, int d, int mult){
+    dimension = d;
+    nvert = (d+1) * mult;
+	sprintf (name, "%dd%dvs.g", dimension, nvert);
+	int i, j, v, m;
+	for (i = 0, v = 0; i < dimension; i++)
+        for (m = 0; m < mult; m++, v++){
+            for (j = 0; j < dimension; j++)
+                vertices[v][j] = 0;
+            vertices[v][i] = 1;
+        }
+    for (m = 0; m < mult; m++, v++){
+        for (j = 0; j < dimension; j++)
+            vertices[v][j] = -1;
+    }
+}
+
+// Gen middles of edges of the cross polytope
 void gen_ortahedr_edges(char *name, int d){
     dimension = d;
     nvert = 2 * d * (d-1);
@@ -75,8 +107,10 @@ int main(int argc, char *argv[])
 {
 	char outfname[64];
 	//sprintf (outfname, "gen.g");
-    for (int d = 2; d <= 6; d++){
-        gen_qube_vertices(outfname, d);
+    for (int d = 7; d <= 15; d++){
+        gen_simplex_vertices(outfname, d, 2);
+        //gen_12vectors(outfname, d);
+        //gen_cube_vertices(outfname, d);
         //gen_ortahedr_edges(outfname, d);
         FILE *outf = fopen(outfname, "w");
         if (outf == NULL){

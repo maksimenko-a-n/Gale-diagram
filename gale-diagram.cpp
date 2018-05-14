@@ -337,8 +337,8 @@ int Gale_diagram::vertices_number(FILE *outf){
 }
 
 
-// Write 0-1 matrix with cols columns (cols <= 64)
-void write_matrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_matrix){
+// Write 0-1 matrix with ncols columns (ncols <= 64)
+void write_incmatrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_matrix){
 	int nrows = inc_matrix.size();
     const int64_t *data = inc_matrix.data();
 	fprintf (wfile, "%d %d\n", nrows, ncols);

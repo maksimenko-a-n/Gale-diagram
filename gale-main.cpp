@@ -5,8 +5,22 @@
 //    MAIN
 /////////////
 
-// Input is the name of a file with Gale diagram (list of points)
-// Output is the cofacets
+/* 
+Input is the name of a file with Gale diagram (list of points).
+The example of a Gale diagram:
+2 4
+  1  1
+ -1  1
+  1 -1
+ -1 -1
+The number of points (lines in the file) cann't be greater than MAX_VERT = 64 (the length of the type int64_t).
+The values of the coordinates must be integers in range [-MAX_NUMBERS, MAX_NUMBERS].
+The dimension of the Gale diagram (number of columns in the file) cann't be greater than MAX_DIM = 16.
+Output is:
+1) the list of facets of the appropriate polytope,
+2) test for every point of the Gale diagram if it is a vertex of the polytope
+3) find the graph and the ridge-graph of the polytope
+*/
 
 int main(int argc, char *argv[])
 {
@@ -52,7 +66,8 @@ int main(int argc, char *argv[])
     if (num_of_real_vertices == nvert){
         fprintf (outf, "Ridges:\n");
         t = clock();
-        int ridges = edges_number(nfacets, nvert, gale.facet_vertex, outf);
+        //int ridges = 0;
+        int ridges = edges_number(nfacets, nvert, gale.facet_vertex);
         fprintf (outf, "Ridges = %d\n", ridges);
         // Transpose facet_vertex to vertex_facet
         vector< vector<int64_t> > vertex_facet = transpose(nfacets, nvert, gale.facet_vertex);
