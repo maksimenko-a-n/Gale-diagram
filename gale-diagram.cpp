@@ -1,7 +1,8 @@
 #include "gale-diagram.hpp"
 
 Gale_diagram::Gale_diagram(){
-    gauss_epsilon = sqrt(DBL_EPSILON); // For fabs(x) < epsilon
+    // For comparisons like fabs(x) < gauss_epsilon
+    gauss_epsilon = sqrt(DBL_EPSILON);
     matrix_data = NULL; 
 }
 
@@ -9,6 +10,7 @@ Gale_diagram::~Gale_diagram(){
     free_matrix();
 }
 
+// Allocate memory for matrix
 void Gale_diagram::init_matrix(int nrows, int ncols){
     free_matrix();
     matrix_data = (double*)malloc(nrows * ncols * sizeof(double));
@@ -26,6 +28,7 @@ void Gale_diagram::init_Gauss(){
     init_matrix(nrows, dimension+2);
 }
 
+// Deallocate the memory of matrix
 void Gale_diagram::free_matrix(){
     if (matrix_data != NULL)
         free(matrix_data);
@@ -38,7 +41,6 @@ int Gale_diagram::read(const char *filename){
 		printf ("ERROR: Cann't open the file %s\n", filename);
 		return 1;
 	}
-	//printf ("Open input file %s\n", filename);
 
 	char buffer[LINE_SIZE];
 	int length, k;
@@ -55,7 +57,6 @@ int Gale_diagram::read(const char *filename){
 		printf ("ERROR in %s: dimension = %d, but must be in [2, %d]\n", filename, dimension, MAX_DIM);
 		return 3;
 	}
-	//printf ("dim = %d; ", dimension);
 
 	// Read dimension
 	int nvert = strtol (pch, &pch, 10);
@@ -63,11 +64,11 @@ int Gale_diagram::read(const char *filename){
 		printf ("ERROR in %s: number of vertices = %d, but must be in [2, %d]\n", filename, nvert, MAX_VERT);
 		return 4;
 	}
-	//printf ("vert = %d\n", nvert);
 	
     vertices.clear(); // Remove all old points
 	char *new_pch;
 	int i, j;
+    // Read points from the file
 	for (i = 0; i < nvert; i++){
 		pch = fgets (buffer, LINE_SIZE, inf);
 		if ( pch == NULL){
@@ -164,7 +165,7 @@ inline int Gale_diagram::forward_elimination(int nrows, int ncols, double **M){
 // Return 0 if it is a facet
 // Return 1 if it is not a facet, but can be if we append some vertices
 // Return 2 or 3 if it is not a facet and cann't be a facet (after appending any vertices)
-int Gale_diagram::not_facet(int ncols){ //, int64_t x){
+int Gale_diagram::not_facet(int ncols){ 
     int row, col;
     // Init matrix. The columns are vertices (points) from the curface
     for (row = 0; row < dimension; row++){
@@ -250,7 +251,7 @@ int Gale_diagram::facets_with_k_vert (int k, int startv, int curnv, int64_t curv
         // Check if the current set has a subset which is a facet
         // Generally, we have to test not all the facets, but only the ones with smaller number of vertices
         for (i = 0; i < i_max && (newset & facet_vertex[i]) != newset; i++) ;
-//        for (i = 0; (i_max - i) * ((newset & facet_vertex[i]) - newset) != 0; i++) ;
+//        for (i = 0; (i_max - i) * ((newset & facet_vertex[i]) - newset) != 0; i++) ; // Optimization
         if (i >= i_max){
             curface[curnv] = vertices[startv].data();
             if (facets_with_k_vert (k, startv+1, curnv+1, newset) == 1)
@@ -262,25 +263,27 @@ int Gale_diagram::facets_with_k_vert (int k, int startv, int curnv, int64_t curv
 
 // Find all facets and save them into facet_vertex 
 int Gale_diagram::find_facets (){
-	facet_vertex.clear();
+	facet_vertex.clear(); // Clear the incidence matrix
 	int64_t one_bit = 1;
     nfacets_for_testing[0] = 0;
+    // Test if there is (0,...,0) among the vertices
     int v, j;
     for (v = 0; v < vertices.size(); v++){
         for (j = 0; j < dimension && vertices[v][j] == 0; j++) ;
         if (j == dimension)
             facet_vertex.push_back((~(int64_t)0) - (one_bit << v));
     }
+    // Consistently test every set of k vertices 
 	for (int k = 2; k <= dimension+1; k++){
         nfacets_for_testing[k-1] = facet_vertex.size();
 		if (facets_with_k_vert (k, 0, 0, ~(int64_t)0) == 1)
             return facet_vertex.size();
-		//printf ("N(%d-cofaces) = %d\n", k, nfaces);
+		//printf ("Number of %d-cofaces = %d\n", k, facet_vertex.size() - nfacets_for_testing[k-1]);
     }
     return facet_vertex.size();
 }
 
-// Input is the vertex number from the array vertices
+// Input is the vertex number from the array vertices[]
 int Gale_diagram::is_vertex(int p){
     int nvert = vertices.size();
     if (nvert < dimension + 2)
@@ -297,16 +300,18 @@ int Gale_diagram::is_vertex(int p){
             nf++; // nf is the number of facets which contains the vertex
         }    
     }
-    int64_t mask = 1;
+    if (nf < nvert - dimension - 1)
+        return 0; // Too few common facets
+
+    int64_t mask = 1; 
     if (nvert < MAX_VERT)
         mask = (mask << nvert) - 1;
     else
         mask = ~(int64_t)0;
+    // Now mask consists of (nvert) ones and (MAX_VERT - nvert) zeroes
 
     if ((intersection & mask) != vf)
         return 0; // Intersection of facets isn't coincide with the vertex
-    if (nf < nvert - dimension - 1)
-        return 0; // Too few common facets
     // Check the rank of the vertices (without vertex p)
     // Init the matrix
     int nrows = 0;
@@ -315,7 +320,6 @@ int Gale_diagram::is_vertex(int p){
             for (int col = 0; col < dimension; col++){
                 matrix[nrows][col] = vertices[i][col];
             }    
-            //matrix[nrows][dimension] = 1;
             nrows++;
         }
     }
@@ -331,6 +335,8 @@ int Gale_diagram::is_vertex(int p){
     return 0; // Isn't full rank
 }
 
+// Is this a diagram of some convex polytope?
+// Write the first bad vertex into outf
 int Gale_diagram::is_polytope(FILE *outf){
     vector<int> bad_vertices;
     for (int i = 0; i < vertices.size(); i++){
@@ -344,7 +350,7 @@ int Gale_diagram::is_polytope(FILE *outf){
 }
 
 
-// Write 0-1 matrix with ncols columns (ncols <= 64)
+// Write 0-1 matrix with ncols columns (ncols <= 64) into file wfile
 void write_incmatrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_matrix){
 	int nrows = inc_matrix.size();
     const int64_t *data = inc_matrix.data();
@@ -355,7 +361,6 @@ void write_incmatrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_m
 			fprintf (wfile, " %d", x&1);
 		fprintf (wfile, "\n");
 	}
-	//fprintf (wfile, "end\n");
 }
 
 
@@ -428,14 +433,13 @@ int edges_number_long(const int vertices, const int facets, const vector< vector
 // Transpose facet_vertex to vertex_facet
 vector< vector<int64_t> > transpose(const int nfacets, const int nvert, vector<int64_t> &facet_vertex){
     int size = (nfacets - 1) / 64 + 1;
-    vector< vector<int64_t> > vertex_facet(nvert, vector<int64_t>(size,0)); // Incidence matrix
+    vector< vector<int64_t> > vertex_facet(nvert, vector<int64_t>(size,0)); // The output matrix
     int64_t v = 1; 
     for (int i = 0; i < nvert; i++, v <<= 1){
-        //vertex_facet[i] = 0;
         int64_t f = 1; 
         int s = 0;
         for (int j = 0; j < nfacets; j++, f <<= 1){
-            if (f == 0){
+            if (f == 0){ // New block of facets
                 s++;
                 f = 1;
             }

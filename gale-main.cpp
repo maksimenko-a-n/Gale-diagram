@@ -43,33 +43,31 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 	printf ("Output is saved in %s\n", outfname);
-        
 	gale.write (outf);
 
-    // Allocate memory for the procedures of finding facets and vertices
-    gale.init_Gauss ();  
+    gale.init_Gauss (); // Allocate memory for the procedures of finding facets and vertices
 	clock_t t;
 	t = clock();
     int nfacets = gale.find_facets(); // Find facets
 	t = clock() - t;
     printf ("Facets = %d (elapsed time: %4.3f sec)\n", nfacets, ((float)t)/CLOCKS_PER_SEC);
 	gale.write_facets(outf); // Write facets into the file outf
-    int nvert = gale.vertices.size();
+    int nverts = gale.vertices.size();
     fprintf (outf, "Facets-vertices incidence matrix:\n");
-    write_incmatrix (outf, nvert, gale.facet_vertex);
+    write_incmatrix (outf, nverts, gale.facet_vertex);
     // Check if the Gale diagram corresponds to a convex polytope
     if (gale.is_polytope(outf)){
         t = clock();
-        int ridges = edges_number(nfacets, nvert, gale.facet_vertex);
+        int ridges = edges_number(nfacets, nverts, gale.facet_vertex);
         fprintf (outf, "Ridges = %d\n", ridges);
         // Transpose facet_vertex to vertex_facet
-        vector< vector<int64_t> > vertex_facet = transpose(nfacets, nvert, gale.facet_vertex);
+        vector< vector<int64_t> > vertex_facet = transpose(nfacets, nverts, gale.facet_vertex);
         fprintf (outf, "Edges:\n");
-        int edges = edges_number_long(nvert, nfacets, vertex_facet, outf);
+        int edges = edges_number_long(nverts, nfacets, vertex_facet, outf);
         t = clock() - t;
         fprintf (outf, "Edges = %d\n", edges);
         printf ("Edges: %d, Ridges: %d (elapsed time: %4.3f sec)\n", edges, ridges, ((float)t)/CLOCKS_PER_SEC);
-        if (edges * 2 == nvert * (nvert-1))
+        if (edges * 2 == nverts * (nverts-1))
             printf ("2-Neighborly polytope\n");
         if (ridges * 2 == nfacets * (nfacets-1))
             printf ("Dual 2-neighborly polytope\n");
@@ -78,8 +76,6 @@ int main(int argc, char *argv[])
         printf ("This is not convex polytope!\n");
         fprintf (outf, "This is not convex polytope!\n");
     }
-
 	fclose (outf);
-		
 	return 0;
 }

@@ -1,7 +1,8 @@
-g++ genexamples.cpp -o gen
+g++ genexamples.cpp -o gen.exe
 gen.exe
 gale.exe 2d16v.g
-gale.exe 7d28vcr.g
-gale.exe 5d32vc.g
-gale.exe 10d22vs.g
-gale.exe 5d40vo.g
+gale.exe 3d27v.g
+gale.exe 7d28v-cross.g
+gale.exe 5d32v-cube.g
+gale.exe 10d22v-simplex.g
+gale.exe 5d40v-cedges.g
