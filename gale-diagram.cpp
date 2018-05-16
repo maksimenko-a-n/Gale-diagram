@@ -268,7 +268,7 @@ int Gale_diagram::facets_with_k_vert (int k, int startv, int curnv, int64_t curv
 int Gale_diagram::find_facets (){
 	facet_vertex.clear(); // Clear the incidence matrix
 	int64_t one_bit = 1;
-    nfacets_for_testing[0] = 0;
+    //nfacets_for_testing[0] = 0; // optimization for small num of facets
     // Test if there is (0,...,0) among the vertices
     int v, j;
     for (v = 0; v < vertices.size(); v++){
@@ -278,7 +278,7 @@ int Gale_diagram::find_facets (){
     }
     // Consistently test every set of k vertices 
 	for (int k = 2; k <= dimension+1; k++){
-        nfacets_for_testing[k-1] = facet_vertex.size();
+        //nfacets_for_testing[k-1] = facet_vertex.size(); // optimization for small num of facets
 		if (facets_with_k_vert (k, 0, 0, ~(int64_t)0) == 1)
             return facet_vertex.size();
 		//printf ("Number of %d-cofaces = %d\n", k, facet_vertex.size() - nfacets_for_testing[k-1]);

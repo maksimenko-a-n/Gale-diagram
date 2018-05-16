@@ -45,7 +45,7 @@ public:
     int is_polytope(FILE *outf = NULL); // Is it a diagram of a convex polytope?
 private:
     double gauss_epsilon; // For comparisons like fabs(x) < gauss_epsilon
-    int nfacets_for_testing[MAX_DIM+1]; // Contains the num of facets with less or equal k vertices
+    //int nfacets_for_testing[MAX_DIM+1]; // Contains the num of facets with less or equal k vertices
     int *current_coface[MAX_VERT]; // The set of tested vertices
     double *matrix[MAX_VERT]; // For the Gauss method
     double *matrix_data; // The memory for the matrix

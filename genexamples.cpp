@@ -148,11 +148,6 @@ int main(int argc, char *argv[])
 	sprintf (outfname, "%dd%dv.g", dimension, nvert);
     write_gale(outfname);
     
-    // The vertices of a cross polytope with the given multiplicity
-    gen_cross_vertices(7, 2);
-	sprintf (outfname, "%dd%dv-cross.g", dimension, nvert);
-    write_gale(outfname);
-    
     // The vertices of a cube
     gen_cube_vertices(5);
 	sprintf (outfname, "%dd%dv-cube.g", dimension, nvert);
@@ -166,6 +161,11 @@ int main(int argc, char *argv[])
     // The middles of edges of a cross polytope
     gen_cross_edges(5);
 	sprintf (outfname, "%dd%dv-cedges.g", dimension, nvert);
+    write_gale(outfname);
+    
+    // The vertices of a cross polytope with the given multiplicity
+    gen_cross_vertices(8, 2);
+	sprintf (outfname, "%dd%dv-cross.g", dimension, nvert);
     write_gale(outfname);
 	return 0;
 }
