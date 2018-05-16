@@ -38,15 +38,15 @@ public:
     void init_Gauss(); // Allocate memory for the Gauss method. Calls the init_matrix(nrows, dimension+2)
     void init_matrix(int nrows, int ncols); // Allocate memory for matrix
     void free_matrix(); // Deallocate the memory of matrix
-    int not_facet(int ncols); // Test if curface isn't a facet. Return 0 if it is a facet
+    int not_facet(int ncols); // Check whether curface isn't a facet. Return 0 if it is a facet
     int facets_with_k_vert (int k, int startv, int curnv, int64_t curvertexset); // Find all facets with k vertices
     int find_facets (); // Find all facets
     int is_vertex(int p); // Can vertices[p] be a vertex of the appropriate polytope?
-    int is_polytope(FILE *outf = NULL); // Is it a diagram of some convex polytope?
+    int is_polytope(FILE *outf = NULL); // Is it a diagram of a convex polytope?
 private:
     double gauss_epsilon; // For comparisons like fabs(x) < gauss_epsilon
     int nfacets_for_testing[MAX_DIM+1]; // Contains the num of facets with less or equal k vertices
-    int *curface[MAX_VERT]; // The set of tested vertices
+    int *current_coface[MAX_VERT]; // The set of tested vertices
     double *matrix[MAX_VERT]; // For the Gauss method
     double *matrix_data; // The memory for the matrix
     inline int forward_elimination(int nrows, int ncols, double **M); // First stage of the Gauss method
