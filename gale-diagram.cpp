@@ -166,58 +166,33 @@ int Gale_diagram::not_facet(int ncols){
     int row, col;
     // Init matrix. The columns are vertices (points) from the current_coface
     for (row = 0; row < dimension; row++){
-        for (col = 0; col < ncols; col++)
+        for (col = 0; col < ncols-1; col++)
             matrix[row][col] = current_coface[col][row];
-        matrix[row][ncols] = 0;
+        matrix[row][col] = -current_coface[col][row];
 	}
-    // The last row in the matrix indicate --- we seak the affine hull
-    for (col = 0; col <= ncols; col++)
-        matrix[dimension][col] = 1;
 
     // Gauss method
     // Stage 1: Forward Elimination
     if (forward_elimination(dimension, ncols, matrix) != 0)
         return 2; // Not a facet (singular system)
-    // Operations with the last row of the matrix    
-    int step;
-    double y;
-    for (step = 0; step < ncols-1; step++){
-        y = matrix[dimension][step];
-        if (fabs(y) >= gauss_epsilon){ // subtract step-th and dimension-th rows
-            for (col = step+1; col < ncols; col++)
-                matrix[dimension][col] -= y * matrix[step][col];
-        }
-    }
     
-    // The last step: step == ncols - 1
-    double diag_entry = matrix[dimension][step];
-    if (fabs(diag_entry) < gauss_epsilon){
-        return 1; // Has no solution, but may be appended for a good solution
-    }
-    // Normalize diag_entry and row 'dimension'
-    //matrix[dimension][step] = 1;
-    matrix[dimension][ncols] /= diag_entry;
-    if (dimension != step){ // Swap rows
-        double *pt = matrix[dimension];
-        matrix[dimension] = matrix[step];
-        matrix[step] = pt;
-    }    
-    // Test for impossibility of solution
-    for (row = step + 1; row <= dimension; row++){
-        if (fabs(matrix[row][step]) >= gauss_epsilon) // Looks like 0 * x == c, where c != 0.
+    // Test for the impossibility of solution
+    int step = ncols - 1;
+    for (row = step; row < dimension; row++){
+        if (fabs(matrix[row][step]) >= gauss_epsilon) // The equation looks like 0 * x == c, where c != 0.
             return 1; // Has no solution, but can be appended for a good solution
     }
     
     // Stage 2: back substitution
     // All diagonal entries are equal to 1
     double value;
-    for (step = ncols - 1; step >= 0; step--){
-        value = matrix[step][ncols];
+    for (step = ncols - 2; step >= 0; step--){
+        value = matrix[step][ncols-1];
         if (value < gauss_epsilon){ // if value is nonpositive
             return 3; // Singular or will be singular (if we append some points to it)
         }
         for (row = step - 1; row >= 0; row--)
-            matrix[row][ncols] -= matrix[row][step] * value;
+            matrix[row][ncols-1] -= matrix[row][step] * value;
     }    
     return 0;
 }
