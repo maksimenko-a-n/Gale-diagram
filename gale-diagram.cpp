@@ -166,9 +166,9 @@ int Gale_diagram::not_facet(int ncols){
     int row, col;
     // Init matrix. The columns are vertices (points) from the current_coface
     for (row = 0; row < dimension; row++){
-        for (col = 0; col < ncols-1; col++)
+        for (col = 0; col < ncols; col++)
             matrix[row][col] = current_coface[col][row];
-        matrix[row][col] = -current_coface[col][row];
+        //matrix[row][col] = -current_coface[col][row];
 	}
 
     // Gauss method
@@ -187,12 +187,12 @@ int Gale_diagram::not_facet(int ncols){
     // All diagonal entries are equal to 1
     double value;
     for (step = ncols - 2; step >= 0; step--){
-        value = matrix[step][ncols-1];
+        value = -matrix[step][ncols-1];
         if (value < gauss_epsilon){ // if value is nonpositive
             return 3; // Singular or will be singular (if we append some points to it)
         }
         for (row = step - 1; row >= 0; row--)
-            matrix[row][ncols-1] -= matrix[row][step] * value;
+            matrix[row][ncols-1] += matrix[row][step] * value;
     }    
     return 0;
 }
