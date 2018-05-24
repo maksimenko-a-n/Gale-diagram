@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdint.h>  // int64_t
 #include <float.h>  // DBL_EPSILON
+#include <string.h> // memcmp()
 
 #define MAX_DIM 16 // The maximum dimension of the Gale diagram (GD)
 #define MAX_NUMBERS 2 // The maximum abs value of the coordinates of points in GD
@@ -21,6 +22,7 @@ int edges_number(const int vertices, const int facets, const vector<int64_t> &ve
 int edges_number_long(const int vertices, const int facets, const vector< vector<int64_t> > &vertex_facet, FILE *outf = NULL);
 // Transpose inc-matrix
 vector< vector<int64_t> > transpose(const int facets, const int vertices, vector<int64_t> &facet_vertex);
+vector< vector<char> > gen_permute(int n);
 
 // The Gale diagram (GD)
 class Gale_diagram{
@@ -32,7 +34,8 @@ public:
     
     Gale_diagram();
     ~Gale_diagram();
-    int read(const char *filename); // Read GD from file
+    int read_diagram(FILE *inf); // Read GD from the inf
+    int read(const char *filename); // Read GD from a file
     void write(FILE *outf); // Write GD to file
     void write_facets(FILE *outf); // Write the list of the facets (sets of points)
     void init_Gauss(); // Allocate memory for the Gauss method. Calls the init_matrix(nrows, dimension+2)
@@ -43,6 +46,12 @@ public:
     int find_facets (); // Find all facets
     int is_vertex(int p); // Can vertices[p] be a vertex of the appropriate polytope?
     int is_polytope(FILE *outf = NULL); // Is it a diagram of a convex polytope?
+    void vector2bin(uint64_t *output, char *permut); // Transform vertices to output with permutations of coordinates
+    void bin2vector(uint64_t *input); // Transform binary input to vertices
+    void normalize_bin(uint64_t *input);
+    void lex_min(uint64_t *output); // Find the lexicographically minimal and write it in output
+    int vertices_in_facets(); // Count the total number vertices in cofacets
+    int max_multiplicity(); // Count the maximum multiplicity of vertices
 private:
     double gauss_epsilon; // For comparisons like fabs(x) < gauss_epsilon
     //int nfacets_for_testing[MAX_DIM+1]; // Contains the num of facets with less or equal k vertices

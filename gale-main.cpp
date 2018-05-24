@@ -44,6 +44,16 @@ int main(int argc, char *argv[])
 	}
 	printf ("Output is saved in %s\n", outfname);
 	gale.write (outf);
+    /*
+    uint64_t output[MAX_VERT];
+    gale.lex_min(output);
+    //int64_t bin_diagram[MAX_VERT];
+    //gale.vector2bin(bin_diagram, all_permutations[5].data());
+    gale.bin2vector(output);
+	gale.write (outf);
+	fclose (outf);
+    return 0;
+    */
 
     gale.init_Gauss (); // Allocate memory for the procedures of finding facets and vertices
 	clock_t t = clock();

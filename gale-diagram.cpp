@@ -34,33 +34,27 @@ void Gale_diagram::free_matrix(){
 }
 
 // Read Gale diagram from the file: dimension, nverts and vertices[][]
-int Gale_diagram::read(const char *filename){
-	FILE *inf = fopen(filename, "r");
-	if (inf == NULL){
-		printf ("ERROR: Cann't open the file %s\n", filename);
-		return 1;
-	}
-
+int Gale_diagram::read_diagram(FILE *inf){
 	char buffer[LINE_SIZE]; // the buffer for reading lines from the file
     // Read the first line
 	char *pch = fgets (buffer, LINE_SIZE, inf);
 	if ( pch == NULL){
-		printf ("ERROR: unexpected EOF in %s\n", filename);
-		return 2;
+		printf ("Read file ERROR: unexpected EOF\n");
+		return 1;
     }    
 
 	// Read dimension
 	dimension = strtol (pch, &pch, 10);
 	if (dimension < 2 || dimension > MAX_DIM){
-		printf ("ERROR in %s: dimension = %d, but must be in [2, %d]\n", filename, dimension, MAX_DIM);
-		return 3;
+		printf ("Read file ERROR: dimension = %d, but must be in [2, %d]\n", dimension, MAX_DIM);
+		return 2;
 	}
 
 	// Read dimension
 	int nverts = strtol (pch, &pch, 10);
 	if (nverts < 2 || nverts > MAX_VERT){
-		printf ("ERROR in %s: number of vertices = %d, but must be in [2, %d]\n", filename, nverts, MAX_VERT);
-		return 4;
+		printf ("Read file ERROR: number of vertices = %d, but must be in [2, %d]\n", nverts, MAX_VERT);
+		return 3;
 	}
 	
     vertices.clear(); // Remove all old points
@@ -68,33 +62,43 @@ int Gale_diagram::read(const char *filename){
 	for (int i = 0; i < nverts; i++){
 		pch = fgets (buffer, LINE_SIZE, inf);
 		if ( pch == NULL){
-			printf ("ERROR: unexpected EOF in %s\n", filename);
-			return 2;
+			printf ("Read file ERROR: unexpected EOF\n");
+			return 1;
 		}	
         vertices.push_back(vector<int>());
 		for (int j = 0; j < dimension; j++){
             char *new_pch;
 			int x = strtol (pch, &new_pch, 10);
 			if (pch == new_pch || fabs(x) > MAX_NUMBERS){
-				printf ("ERROR in line %d of %s: coordinates of points must be integers in [%d, %d]\n", i+2, filename, -MAX_NUMBERS, MAX_NUMBERS);
+				printf ("Read file ERROR: in line %d: coordinates of points must be integers in [%d, %d]\n", i+2, -MAX_NUMBERS, MAX_NUMBERS);
 				return 4;
 			}
             pch = new_pch;
             vertices[i].push_back(x);
 		}
 	}
-	fclose (inf);
-		
 	return 0;
+}	
+
+// Read Gale diagram from the file: dimension, nverts and vertices[][]
+int Gale_diagram::read(const char *filename){
+	FILE *inf = fopen(filename, "r");
+	if (inf == NULL){
+		printf ("ERROR: Cann't open the file %s\n", filename);
+		return 1;
+	}
+    int err = read_diagram(inf);
+	fclose (inf);
+	return err;
 }	
 
 // Write vertices[][] to file
 void Gale_diagram::write(FILE *outf){
     int nverts = vertices.size();
-	fprintf (outf, "Source:\n%d %d\n", dimension, nverts);
+	fprintf (outf, "%d %d\n", dimension, nverts);
 	int i, j;
 	for (i = 0; i < nverts; i++){
-		fprintf (outf, "%2d:", i);
+		//fprintf (outf, "%2d:", i);
 		for (j = 0; j < dimension; j++)
 			fprintf (outf, " %2d", vertices[i][j]);
 		fprintf (outf, "\n");
@@ -327,6 +331,152 @@ int Gale_diagram::is_polytope(FILE *outf){
     return 1;
 }
 
+// Transform vertices to output with permutations of coordinates
+void Gale_diagram::vector2bin(uint64_t *output, char *permut){
+	uint64_t transform[5] = {0,1,3,14,15};
+    int i, j, p;
+    int nverts = vertices.size();
+    for (i = 0; i < nverts; i++)
+        output[i] = 0;
+    for (j = 0; j < dimension; j++){
+        p = permut[j] * 4;
+        for (i = 0; i < nverts; i++){
+            output[i] |= (transform[vertices[i][j] + 2] << p);
+        }
+    }
+}
+
+// Transform binary input to vertices
+void Gale_diagram::bin2vector(uint64_t *input){
+	int map[16] = {-2,-1,0,0,0,0,0,0,0,0,0,0,0,0,1,2};
+    int i, j;
+    int nverts = vertices.size();
+    for (i = 0; i < nverts; i++){
+        uint64_t x = input[i];
+        for (j = 0; j < dimension; j++, x >>= 4){
+            vertices[i][j] = map[x & 0b1111];
+        }
+    }
+}
+
+// Normalize binary input
+void Gale_diagram::normalize_bin(uint64_t *input){
+    int i, j;
+    int nverts = vertices.size();
+    for (i = 0; i < nverts; i++){
+        uint64_t x = input[i];
+        uint64_t mask = 0b1001;
+        for (j = 0; j < dimension; j++, x >>= 4, mask <<= 4){
+            if ((x & 0b1111) == 0b1100)
+                input[i] -= mask;
+        }
+    }
+}
+
+
+// Find the lexicographically minimal and write it in output
+void Gale_diagram::lex_min(uint64_t *output){
+    vector< vector<char> > all_permutations;
+    all_permutations = gen_permute(dimension);
+    int npermut = all_permutations.size();
+/*    fprintf (outf, "Permutations:\n");
+    for (int i = 0; i < npermut; i++){
+        for (int j = 0; j < gale.dimension; j++)
+            fprintf (outf, " %d", all_permutations[i][j]);
+        fprintf (outf, "\n");
+    }
+    fprintf (outf, "\n");
+*/    
+    output[0] = ~(uint64_t)0;
+    uint64_t current1[MAX_VERT], current2[MAX_VERT];
+    int nverts = vertices.size();
+    for (int i = 0; i < npermut; i++){ // Choose permutation of coordinates
+        vector2bin(current1, all_permutations[i].data());
+        int nreflections = (1 << dimension);
+        for (int j = 0; j < nreflections; j++){ // Choose reflection
+            uint64_t mask = 0; // mask for reflections
+            uint64_t mask2 = 0b1111; // one-bit reflection
+            uint32_t mask3 = 1; // one-bit reflection
+            int x, k;
+            for (x = j, k = 0; k < dimension; k++, x >>= 1, mask2 <<= 4){
+                mask |= (x&1) * mask2;
+                mask3 |= (mask3 << 4);
+            }    
+            for (k = 0; k < nverts; k++){ // Realize reflection
+                uint32_t cur = current1[k];
+                uint32_t y = cur & (cur >> 1);
+                y = ((y >> 2) | (~y)) & mask3; // Some magic for zeroes 0b0011
+                y |= y << 1;
+                y |= y << 2;
+                current2[k] = cur ^ (mask & y);
+            }    
+            int is_compare = 1; // Do compare current2 and output?
+            // Bubble sort
+            for (k = 0; k < nverts-1; k++){ // Sorting of current2 and comparing with output
+                int m_min = k;
+                int min = current2[m_min];
+                for (int m = k+1; m < nverts; m++){
+                    if (min > current2[m]){
+                        m_min = m;
+                        min = current2[m_min];
+                    }    
+                }        
+                if (is_compare){
+                    if (min > output[k])
+                        break;
+                    if (min < output[k]){
+                        output[k] = min;
+                        is_compare = 0;
+                    }    
+                }    
+                else
+                    output[k] = min;
+                // Swap    
+                current2[m_min] = current2[k];
+                current2[k] = min;
+            }
+            if (k == nverts-1){
+                if ((!is_compare) || current2[k] < output[k])
+                    output[k] = current2[k];
+            }
+        }
+    }
+    normalize_bin(output);
+}
+
+// Count vertices, that are incident at least one facet
+int Gale_diagram::vertices_in_facets(){
+    int64_t intersection = ~(int64_t)0;
+    int nfacets = facet_vertex.size();
+    int i;
+    for (i = 0; i < nfacets; i++)
+        intersection &= facet_vertex[i];
+    int nverts = vertices.size();
+    int num = 0;
+    int64_t funion = ~intersection;
+    for (i = 0; i < nverts; i++, funion >>= 1)
+        num += funion&1;
+    return num;
+}
+
+// Count the maximum multiplicity of vertices
+// Suppose nverts > 0
+int Gale_diagram::max_multiplicity(){
+    int nverts = vertices.size(); 
+    int max = 1;
+    int multiplicity = 1;
+    for (int i = 1; i < nverts; i++){
+        if (memcmp(vertices[i-1].data(), vertices[i].data(), sizeof(int)*dimension) == 0){
+            multiplicity++; // increase multiplicity
+            if (multiplicity > max)
+                max = multiplicity;
+        }
+        else{
+            multiplicity = 1;
+        }
+    }
+    return max;
+}
 
 // Write 0-1 matrix with ncols columns (ncols <= 64) into file wfile
 void write_incmatrix (FILE *wfile, const int ncols, const vector<int64_t> &inc_matrix){
@@ -426,4 +576,32 @@ vector< vector<int64_t> > transpose(const int nfacets, const int nverts, vector<
         }
     }
     return vertex_facet;
+}
+
+void recursive_permute(vector< vector<char> > &array, vector<char> &cur_perm, int d, int step){
+    if (step == d-1){
+        array.push_back(vector<char>(cur_perm));
+        return;
+    }
+        
+    int x = cur_perm[step];
+    for(int i = step; i < d; i++){
+        cur_perm[step] = cur_perm[i];
+        cur_perm[i] = x;
+        recursive_permute(array, cur_perm, d, step+1);
+        cur_perm[i] = cur_perm[step];
+        cur_perm[step] = x;
+    }
+}
+
+vector< vector<char> > gen_permute(int d){
+    int nperm = 1, i, j;
+    for (i = 2; i <= d; i++)
+        nperm *= i;
+    vector< vector<char> > permut_array; // The output
+    vector<char> cur_permute(d,0);
+    for (i = 0; i < d; i++)
+        cur_permute[i] = i;
+    recursive_permute(permut_array, cur_permute, d, 0);
+    return permut_array;
 }

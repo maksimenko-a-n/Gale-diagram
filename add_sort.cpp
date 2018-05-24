@@ -234,37 +234,35 @@ int main(int argc, char *argv[])
 		printf ("ERROR: Cann't open the file %s\n", argv[1]);
 		return 1;
 	}
-	char outfname[256]; // The output file name
-	sprintf (outfname, "%s.out", argv[1]);
-    FILE *outf = fopen (outfname, "w"); // Open the output file
-	if (outf == NULL){
-		printf ("ERROR: Cann't open file %s\n", outfname);
-		return 1;
-	}
-	printf ("Output is saved in %s\n", outfname);
-
-
-	char buffer[LINE_SIZE]; // the buffer for reading lines from the file
-    const char begin[] = "begin";
-	char *pch;
-    uint32_t diagram[MAX_VERT];
+    FILE *outf; // Open the output file
     vector<uint32_t *> all_diagrams;
-    uint32_t *data;
     nverts = 0;
     for (int n = 0; ;){
-        pch = fgets (buffer, LINE_SIZE, inf);
+        char buffer[LINE_SIZE]; // the buffer for reading lines from the file
+        char *pch = fgets (buffer, LINE_SIZE, inf);
         if ( pch == NULL)
             break;
+        const char begin[] = "begin";
         if (memcmp(begin, pch, sizeof(begin)-1) == 0){
             n++;
-            printf (" %2d", n);
+            if (n % 100 == 0)
+                printf (" %d", n);
             int d, nv;
+            uint32_t diagram[MAX_VERT];
             int err = read_diagram(inf, d, nv, diagram);
             if (err)
                 break;
             if (nverts == 0){
                 dimension = d;
                 nverts = nv;
+                char outfname[256]; // The output file name
+                sprintf (outfname, "%dd%d-.gs", dimension, nverts+1);
+                outf = fopen (outfname, "w"); // Open the output file
+                if (outf == NULL){
+                    printf ("ERROR: Cann't open file %s\n", outfname);
+                    return 1;
+                }
+                printf ("Output is saved in %s\n", outfname);
             }
             else{
                 if (nv != nverts || d != dimension){
@@ -282,13 +280,18 @@ int main(int argc, char *argv[])
                 diagram[nverts] = 0;
                 int x = i;
                 int s = 0;
-                for (int j = 0; j < dimension; j++){
+                int j;
+                for (j = 0; j < dimension; j++){
                     s |= (x % 3) - 1;
                     diagram[nverts] |= (transform[(x % 3) + 1] << (j*4));
                     x /= 3;
                 }
-                if (s != 0){
-                    data = (uint32_t *)malloc(sizeof(uint32_t)*(nverts+1));
+                for (j = 0; j < nverts; j++){
+                    if (diagram[j] == diagram[nverts])
+                        break;
+                }        
+                if ((s != 0) && (j == nverts)){
+                    uint32_t *data = (uint32_t *)malloc(sizeof(uint32_t)*(nverts+1));
                     if (data == NULL){
                         printf ("ERROR: Out of memory\n");
                         break;
@@ -303,7 +306,7 @@ int main(int argc, char *argv[])
 	fclose (inf);
 
     printf ("Before sort\n");
-    nverts += 1;
+    nverts++;
     qsort (all_diagrams.data(), all_diagrams.size(), sizeof(uint32_t *), compare_vertices);
 
     uint32_t **pt = all_diagrams.data();
