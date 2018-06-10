@@ -42,6 +42,7 @@ public:
     void write_facets(FILE *outf); // Write the list of the facets (sets of points)
     int not_facet(int ncols); // Check whether curface isn't a facet. Return 0 if it is a facet
     int facets_with_k_vert (int k, int startv, int curnv, uint32_t curvertexset); // Find all facets with k vertices
+    int facets_with_last_vert (); // Find all facets with the last vertex and add them to facet_vertex
     int find_facets (); // Find all facets
     int is_vertex(int p); // Can vertices[p] be a vertex of the appropriate polytope?
     int is_polytope(FILE *outf = NULL); // Is it a diagram of a convex polytope?

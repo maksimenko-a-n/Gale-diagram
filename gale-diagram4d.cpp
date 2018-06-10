@@ -197,6 +197,29 @@ int Gale_diagram::facets_with_k_vert (int k, int startv, int curnv, uint32_t cur
     return 0;
 }
 
+// Find all facets with the last vertex and add them to facet_vertex
+int Gale_diagram::facets_with_last_vert (){
+	uint32_t one_bit = 1;
+    int prev_nfacets = nfacets;
+    uint32_t curvertexset = ~(uint32_t)0;
+    nverts--; // Attention: temporarily the nverts will be less
+    curvertexset -= one_bit << nverts; // add one vertex
+    current_coface[0] = vertices[nverts];
+    // Consistently test every set of k vertices 
+	for (int k = 2; k <= dimension+1; k++){
+        //nfacets_for_testing[k-1] = facet_vertex.size(); // optimization for small num of facets
+		if (facets_with_k_vert (k, 0, 1, curvertexset) == 1){
+            nverts++;
+            return nfacets+1;
+        }    
+        cofacets_num[k] += nfacets - prev_nfacets;
+        prev_nfacets = nfacets;
+		//printf ("Number of %d-cofaces = %d\n", k, facet_vertex.size() - nfacets_for_testing[k-1]);
+    }
+    nverts++;
+    return nfacets;
+}
+
 // Find all facets and save them into facet_vertex 
 int Gale_diagram::find_facets (){
 	uint32_t one_bit = 1;

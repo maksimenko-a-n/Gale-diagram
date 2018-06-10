@@ -23,14 +23,20 @@ int get_dv(char *filename, int &dim, int &nv){
 }
 
 void process_one_diagram(FILE *outf, FILE *out2f, Gale_diagram &gale, int &newd, int &min2facets){
+    int old_nfacets = gale.find_facets(); // Find facets
+    int ispoly = gale.is_polytope();
+    if (old_nfacets >= MAX_VERT || (ispoly && (old_nfacets > MAX_VERT-2)))
+        return;
     int dimension = gale.dimension;
     int old_nverts = gale.nverts;
     uint8_t *diagram = gale.diagram;
-    int M = pow(3, dimension);
-    uint8_t zero = 0;
+    int old_cofacets_num[DIM+1];
+    memcpy(old_cofacets_num, gale.cofacets_num, sizeof(int)*(DIM+1));
+    int M = pow(3, dimension); // The number of all points that can be added
+    uint8_t zero = 0; // The zero-point
     for (int k = 0; k < dimension; k++)
         zero |= ((uint8_t)1 << (k*2));
-    // is_old_vertices[i] == 0 <=>  i is new vertex and is not zero
+    // is_old_vertices[i] == 0  <=>  i is a new vertex and is not zero
     char is_old_vertices[1 << 8];
     memset (is_old_vertices, 0, 1 << 8);
     is_old_vertices[zero] = 1;
@@ -48,8 +54,10 @@ void process_one_diagram(FILE *outf, FILE *out2f, Gale_diagram &gale, int &newd,
         }    
         if (is_old_vertices[diagram[old_nverts]])
             continue;
-        // Process    
-        int nfacets = gale.find_facets(); // Find facets
+        // Process
+        gale.nfacets = old_nfacets; // Init the number of facets
+        memcpy(gale.cofacets_num, old_cofacets_num, sizeof(int)*(DIM+1));
+        int nfacets = gale.facets_with_last_vert (); // Find facets
         int ridges = edges_number(nfacets, gale.nverts, gale.facet_vertex); // Find ridges
         int ispoly = gale.is_polytope();
         int edges = 0;
@@ -63,7 +71,7 @@ void process_one_diagram(FILE *outf, FILE *out2f, Gale_diagram &gale, int &newd,
         max_freev = (max_freev < 0 ? 0 : max_freev);
         int is_write = 1;
         is_write &= (freev <= max_freev);
-        is_write &= (nfacets <= 20);
+        is_write &= (nfacets <= MAX_VERT);
         int big = gale.cofacets_num[dimension+1] + gale.cofacets_num[dimension];
         is_write &= (big <= 0);
         is_write &= (gale.cofacets_num[2] == 0);
@@ -157,8 +165,6 @@ int main(int argc, char *argv[])
         if (gale.read_diagram_bin(inf))
             break;
         // Process
-        int nfacets = gale.find_facets(); // Find facets
-        int ispoly = gale.is_polytope();
         process_one_diagram(outf, out2f, gale, newd, min2facets);
     }
 	t = clock() - t;
