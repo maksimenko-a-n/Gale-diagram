@@ -299,13 +299,20 @@ int main(int argc, char *argv[])
 		printf("Usage: gale [file name]\n");
 		return 1;
 	}
+
+	FILE *logf = fopen("log", "a");
+	if (logf == NULL){
+		printf ("Write file ERROR: Cann't open the file 'log'\n");
+		return 1;
+	}
+    fprintf (logf, "\nSortg %s\n", argv[1]);
     
     int get_value = get_dv(argv[1], dimension, nverts);
     if (get_value){
         printf ("Wrong file name: get_dv() error %d\n", get_value);
         return 2;
     }
-    printf ("dimension = %d, nverts = %d\n", dimension, nverts);
+    fprintf (logf, "dimension = %d, nverts = %d\n", dimension, nverts);
 
 	FILE *inf = fopen(argv[1], "rb");
 	if (inf == NULL){
@@ -314,6 +321,7 @@ int main(int argc, char *argv[])
 	}
     char outfname[256]; // The output file name
     sprintf (outfname, "%dd%ds.gb", dimension, nverts);
+    fprintf (logf, "Write in %s\n", outfname);
 	FILE *outf = fopen(outfname, "wb");
 	if (outf == NULL){
 		printf ("Write file ERROR: Cann't open the file %s\n", outfname);
@@ -323,8 +331,10 @@ int main(int argc, char *argv[])
     uint8_t diagram[MAX_VERT];
 	clock_t t = clock();
     for (int n = 0; ;n++){
-        if (n % 1000 == 0)
-            printf (" %d", n);
+        if (n % 1000000 == 0){
+            fprintf (logf, " %d", n);
+            fflush (logf);
+        }    
         if (read_diagram_bin(inf, nverts, diagram))
             break;
         
@@ -337,21 +347,20 @@ int main(int argc, char *argv[])
         all_diagrams.push_back(data);
     }
 	t = clock() - t;
-    printf ("\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
+    fprintf (logf, "\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
 	fclose (inf);
 
 //    nverts++;
-    printf ("Totally = %d\n", all_diagrams.size());
+    fprintf (logf, "Totally = %d\n", all_diagrams.size());
     if (all_diagrams.size() == 0){
         fclose (outf);
         return 0;
     }
     
-    printf ("Sort time:");
 	t = clock();
     qsort (all_diagrams.data(), all_diagrams.size(), sizeof(uint8_t *), compare_vertices);
 	t = clock() - t;
-    printf (" %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
+    fprintf (logf, "Sort time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
 
     uint8_t **pt = all_diagrams.data();
     write_diagram_bin(outf, nverts, *pt);
@@ -368,7 +377,8 @@ int main(int argc, char *argv[])
     }
     free(*pt);
     *pt = NULL;
-    printf ("Writen %d\n", writen);
+    fprintf (logf, "Writen %d\n", writen);
 	fclose (outf);
+	fclose (logf);
 	return 0;
 }

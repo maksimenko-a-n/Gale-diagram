@@ -11,6 +11,8 @@
 #define MAX_FACET 20 // For the acceleration of the processing
 //#define LINE_SIZE 1024 // The maximum len of a line in the input file
 
+const int Nall = pow(3, DIM); // The number of all points that can be added
+
 using namespace std; 
 
 // Write 0-1 matrix with ncols columns (ncols <= 64)
@@ -25,16 +27,17 @@ void transpose(const int nfacets, const int nverts, const uint32_t *facet_vertex
 class Gale_diagram{
 public:
 //    FILE *outf; // The output file
-    int dimension; // The dimension of GD
+    // Attention! Cann't use DIM instead of dimension, when compile with -O2
+    //int dimension; // The dimension of GD
     int nverts; // The number of points in GD
 	double vertices[MAX_VERT][DIM]; // The list of points in the diagram
-    uint8_t diagram[MAX_VERT];
     int nfacets; // The number of cofacets in GD
     uint32_t facet_vertex[MAX_FACET]; // Incidence matrix (the result of calculations)
-    int cofacets_num[DIM+1]; // cofacets_num[k] is the number of cofacets with k vertices
+    int cofacets_num[DIM+2]; // cofacets_num[k] is the number of cofacets with k vertices, k\in[2,d+1]
     
     Gale_diagram();
     ~Gale_diagram(){};
+    void convert_bin2vertices(uint8_t *diagram); // Convert binary format to vertices
     int read_diagram_bin(FILE *inf); // Read one diagram from the binary file
     int write_diagram_bin(FILE *outf); // Write one diagram to the binary file
     void write(FILE *outf); // Write GD to file
@@ -47,7 +50,6 @@ public:
     int is_vertex(int p); // Can vertices[p] be a vertex of the appropriate polytope?
     int is_polytope(FILE *outf = NULL); // Is it a diagram of a convex polytope?
     int vertices_in_facets(); // Count the total number vertices in cofacets
-    int max_multiplicity(); // Count the maximum multiplicity of vertices
 private:
     double gauss_epsilon; // For comparisons like fabs(x) < gauss_epsilon
     //int nfacets_for_testing[DIM+1]; // Contains the num of facets with less or equal k vertices

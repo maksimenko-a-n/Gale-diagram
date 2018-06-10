@@ -1,4 +1,4 @@
-#include "gale-diagram.hpp"
+#include "gale-diagram4d.hpp"
 
 Gale_diagram::Gale_diagram(){
     gauss_epsilon = sqrt(DBL_EPSILON); // For comparisons like fabs(x) < gauss_epsilon
@@ -7,25 +7,31 @@ Gale_diagram::Gale_diagram(){
         matrix[i] = matrix_data + i * (DIM+1);
 }
 
-// Read one diagram from the binary file
-int Gale_diagram::read_diagram_bin(FILE *inf){
-    nfacets = 0; // Init the number of facets
-    int s = fread (diagram, sizeof(uint8_t), nverts, inf);
-    if (s < nverts)
-		return 1;
+// Convert binary format to vertices
+void Gale_diagram::convert_bin2vertices(uint8_t *diagram){
     for (int i = 0; i < nverts; i++){
         uint8_t x = diagram[i];
-        for (int j = 0; j < dimension; j++, x >>= 2)
+        for (int j = 0; j < DIM; j++, x >>= 2)
             vertices[i][j] = (x & 0b11) - 1;
     }
+}	
+
+// Read one diagram from the binary file
+int Gale_diagram::read_diagram_bin(FILE *inf){
+    uint8_t diagram[MAX_VERT];
+    nfacets = 0; // Init the number of facets
+    int s = fread (diagram, sizeof(uint8_t), nverts, inf);
+    if (s < nverts) return 1;
+    convert_bin2vertices(diagram);    
     return 0;
 }	
 
 // Write one diagram to the binary file
 int Gale_diagram::write_diagram_bin(FILE *outf){
+    uint8_t diagram[MAX_VERT];
     for (int i = 0; i < nverts; i++){
         diagram[i] = 0;
-        for (int j = 0; j < dimension; j++)
+        for (int j = 0; j < DIM; j++)
             diagram[i] |= (uint8_t)(vertices[i][j] + 1) << (j*2);
     }
     int s = fwrite (diagram, sizeof(uint8_t), nverts, outf);
@@ -38,11 +44,11 @@ int Gale_diagram::write_diagram_bin(FILE *outf){
 
 // Write vertices[][] to file
 void Gale_diagram::write(FILE *outf){
-	fprintf (outf, "%d %d\n", dimension, nverts);
+	fprintf (outf, "%d %d\n", DIM, nverts);
 	int i, j;
 	for (i = 0; i < nverts; i++){
 		//fprintf (outf, "%2d:", i);
-		for (j = 0; j < dimension; j++)
+		for (j = 0; j < DIM; j++)
 			fprintf (outf, " %2d", (int)(vertices[i][j]));
 		fprintf (outf, "\n");
 	}
@@ -50,11 +56,11 @@ void Gale_diagram::write(FILE *outf){
 
 // Write vertices[][] to file
 void Gale_diagram::write_short(FILE *outf){
-	fprintf (outf, "%d %d\n", dimension, nverts);
+	fprintf (outf, "%d %d\n", DIM, nverts);
 	int i, j;
 	for (i = 0; i < nverts; i++){
 		//fprintf (outf, "%2d:", i);
-		for (j = dimension-1; j >= 0; j--)
+		for (j = -1; j >= 0; j--)
 			fprintf (outf, "%d", (int)(vertices[i][j]) + 1);
 		fprintf (outf, "\n");
 	}
@@ -122,7 +128,7 @@ inline int Gale_diagram::forward_elimination(int nrows, int ncols, double **M){
 int Gale_diagram::not_facet(int ncols){ 
     int row, col;
     // Init matrix. The columns are vertices (points) from the current_coface
-    for (row = 0; row < dimension; row++){
+    for (row = 0; row < DIM; row++){
         for (col = 0; col < ncols; col++)
             matrix[row][col] = current_coface[col][row];
         //matrix[row][col] = -current_coface[col][row];
@@ -130,12 +136,12 @@ int Gale_diagram::not_facet(int ncols){
 
     // Gauss method
     // Stage 1: Forward Elimination
-    if (forward_elimination(dimension, ncols, matrix) != 0)
+    if (forward_elimination(DIM, ncols, matrix) != 0)
         return 2; // Not a facet (singular system)
     
     // Test for the impossibility of solution
     int step = ncols - 1;
-    for (row = step; row < dimension; row++){
+    for (row = step; row < DIM; row++){
         if (fabs(matrix[row][step]) >= gauss_epsilon) // The equation looks like 0 * x == c, where c != 0.
             return 1; // Has no solution, but can be appended for a good solution
     }
@@ -206,17 +212,17 @@ int Gale_diagram::facets_with_last_vert (){
     curvertexset -= one_bit << nverts; // add one vertex
     current_coface[0] = vertices[nverts];
     // Consistently test every set of k vertices 
-	for (int k = 2; k <= dimension+1; k++){
+	for (int k = 2; k <= DIM+1; k++){
         //nfacets_for_testing[k-1] = facet_vertex.size(); // optimization for small num of facets
 		if (facets_with_k_vert (k, 0, 1, curvertexset) == 1){
-            nverts++;
+            nverts++; // Restore nverts before quit
             return nfacets+1;
         }    
         cofacets_num[k] += nfacets - prev_nfacets;
         prev_nfacets = nfacets;
 		//printf ("Number of %d-cofaces = %d\n", k, facet_vertex.size() - nfacets_for_testing[k-1]);
     }
-    nverts++;
+    nverts++; // Restore nverts before quit
     return nfacets;
 }
 
@@ -241,7 +247,8 @@ int Gale_diagram::find_facets (){
     cofacets_num[1] = 0;
     
     // Consistently test every set of k vertices 
-	for (int k = 2; k <= dimension+1; k++){
+    // Attention! Cann't use DIM instead of dimension, when compile with -O2
+	for (int k = 2; k <= DIM+1; k++){
         //nfacets_for_testing[k-1] = facet_vertex.size(); // optimization for small num of facets
 		if (facets_with_k_vert (k, 0, 0, ~(uint32_t)0) == 1)
             return nfacets+1;
@@ -254,7 +261,7 @@ int Gale_diagram::find_facets (){
 
 // Input is the vertex number from the array vertices[]
 int Gale_diagram::is_vertex(int p){
-    if (nverts < dimension + 2)
+    if (nverts < DIM + 2)
         return 0; // Too few vertices
     uint32_t vf = 1;
     vf <<= p;
@@ -267,7 +274,7 @@ int Gale_diagram::is_vertex(int p){
             nf++; // nf is the number of facets which contains the vertex
         }    
     }
-    if (nf < nverts - dimension - 1)
+    if (nf < nverts - DIM - 1)
         return 0; // Too few common facets
 
     uint32_t mask = 1; 
@@ -284,18 +291,18 @@ int Gale_diagram::is_vertex(int p){
     int nrows = 0;
     for (i = 0; i < nverts; i++){
         if (i != p){// Add vertex to matrix
-            for (int col = 0; col < dimension; col++){
+            for (int col = 0; col < DIM; col++){
                 matrix[nrows][col] = vertices[i][col];
             }    
             nrows++;
         }
     }
     // Gauss method: Forward Elimination
-    if (forward_elimination(nrows, dimension, matrix) != 0)
+    if (forward_elimination(nrows, DIM, matrix) != 0)
         return 0; // Isn't full rank
     // The last step of Forward Elimination:
-    for (int row = dimension-1; row < nrows; row++){
-        if (fabs(matrix[row][dimension-1]) >= gauss_epsilon)
+    for (int row = DIM-1; row < nrows; row++){
+        if (fabs(matrix[row][DIM-1]) >= gauss_epsilon)
             return 1; // Full rank matrix
     }
     // If we cann't find nonzero element
@@ -329,23 +336,6 @@ int Gale_diagram::vertices_in_facets(){
     return num;
 }
 
-// Count the maximum multiplicity of vertices
-// Suppose nverts > 0 and vertices are sorted
-int Gale_diagram::max_multiplicity(){
-    int max = 1;
-    int multiplicity = 1;
-    for (int i = 1; i < nverts; i++){
-        if (memcmp(vertices[i-1], vertices[i], sizeof(double)*dimension) == 0){
-            multiplicity++; // increase multiplicity
-            if (multiplicity > max)
-                max = multiplicity;
-        }
-        else{
-            multiplicity = 1;
-        }
-    }
-    return max;
-}
 
 // Write 0-1 matrix with ncols columns (ncols <= 32) into file wfile
 void write_incmatrix (FILE *wfile, const int nrows, const int ncols, const uint32_t *inc_matrix){
