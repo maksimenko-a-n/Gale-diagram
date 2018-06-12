@@ -28,7 +28,7 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
     gale.convert_bin2vertices(diagram);
     int old_nfacets = gale.find_facets(); // Find facets
     int ispoly = gale.is_polytope();
-    //if (old_nfacets >= MAX_VERT || (ispoly && (old_nfacets > MAX_VERT-2)))
+    //if (old_nfacets >= MAX_FACET || (ispoly && (old_nfacets > MAX_FACET-2)))
     //    return;
     // Copy the data from the gale
     int old_cofacets_num[DIM+2];
@@ -72,13 +72,18 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
             uint32_t vertex_facet[MAX_VERT];
             transpose(nfacets, gale.nverts, gale.facet_vertex, vertex_facet);
             edges = edges_number(gale.nverts, nfacets, vertex_facet); // Find edges
-        }    
+        }
+        int is_2neighborly = (edges*2 == old_nverts*(old_nverts+1));
+        int is_dual2neighborly = (ispoly && (ridges*2 == nfacets*(nfacets-1)));
         int freev = gale.nverts - gale.vertices_in_facets(); // The number of vertices not in facets
         int max_freev = (gale.nverts <= DIM ? gale.nverts : (2 * DIM - gale.nverts));
-        max_freev = (max_freev < 0 ? 0 : max_freev);
-        int is_write = 1; // Is this diagram good for our purposes?
-        is_write &= (freev <= max_freev);
+        //max_freev = (max_freev < 0 ? 0 : max_freev);
+        max_freev = (max_freev < 1 ? 1 : max_freev);
+        int is_write; // Is this diagram good for our purposes?
+        is_write = (freev <= max_freev);
         is_write &= (nfacets <= MAX_FACET);
+        if (!is_2neighborly)
+            is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
         int big = gale.cofacets_num[DIM] + gale.cofacets_num[DIM+1];
         //is_write &= (big <= small);
         //is_write &= (big <= 0);
@@ -89,10 +94,10 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
             cur_diagram[old_nverts+3] = edges;
             cur_diagram[old_nverts+4] = ridges;
             cur_diagram[0] = 0;
-            if (edges*2 == old_nverts*(old_nverts+1))
+            if (is_2neighborly)
                 cur_diagram[0] = 1;
-            //if (ispoly && (ridges*2 == nfacets*(nfacets-1)))
-            //    cur_diagram[0] = 1;
+            if (is_dual2neighborly)
+                cur_diagram[0] = 2;
             num++;
             cur_diagram += old_nverts+5;
         }
@@ -102,7 +107,7 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
 int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num, int &newd, int &min2facets){
     uint8_t *diagram = buffer;
     for (int n = 0; n < num; n++, diagram += nverts + 4){
-        if (diagram[0] == 0){
+        if (diagram[0] != 1){ // Will be used for the next generation
             int s = fwrite (diagram+1, sizeof(uint8_t), nverts, outf);
             if (s < nverts){
                 printf ("Write file ERROR: Cann't write %d bytes\n", nverts);
@@ -110,7 +115,7 @@ int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num,
             }
             newd++; // The number of new diagrams
         }    
-        else{
+        if (diagram[0] != 0){ // Write in the readable format
             int nfacets = diagram[nverts+1];
             int edges = diagram[nverts+2];
             int ridges = diagram[nverts+3];
@@ -182,7 +187,7 @@ int main(int argc, char *argv[])
         printf ("Wrong file name: get_dv() error %d\n", get_value);
         return 2;
     }
-    fprintf (logf, "dimension = %d, nverts = %d\n", DIM, nverts);
+    fprintf (logf, "dim = %d, nverts = %d\n", DIM, nverts);
     
     // Open the input file
 	FILE *inf = fopen(argv[1], "rb");
@@ -233,7 +238,7 @@ int main(int argc, char *argv[])
 	t = clock() - t;
     fprintf (logf, "\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
     fprintf (logf, "New number of diagrams = %d\n", newd);
-    printf ("New number of diagrams = %d\n", newd);
+    //printf ("New number of diagrams = %d\n", newd);
 	fclose (inf);
 	fclose (outf);
     if (min2facets < 10 * nverts){

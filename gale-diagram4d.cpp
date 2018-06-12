@@ -85,6 +85,8 @@ void Gale_diagram::write_facets(FILE *outf){
 // Return 1 if the rank of M is smaller than ncols-1
 // Otherwise return 0
 inline int Gale_diagram::forward_elimination(int nrows, int ncols, double **M){
+    static int count = 0;
+    count++; // Counter of the total function calls
     int step, row, col;
     double diag_entry, y, *pt;
     for (step = 0; step < ncols-1; step++){
