@@ -209,30 +209,22 @@ int main(int argc, char *argv[])
 	MPI_Comm_size(MPI_COMM_WORLD, &nthreads);
     int rcv_get;
 	MPI_Status status;
+    MPI_Request request;
 
 	if (rank != 0) {
         Gale_diagram gale; // The Gale diagram
+		int size = 0;
+		MPI_Isend(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD, &request);
 		while(1) {
-			MPI_Request request;
-			MPI_Isend(&rank, 1, MPI_INT, 0, I_AM_FREE_TAG, MPI_COMM_WORLD, &request);
 			MPI_Recv(&rcv_get, 1, MPI_INT, 0, TO_WORK_TAG, MPI_COMM_WORLD, &status);
-			if(rcv_get < 1){
-				//if (rcv_get < 0)
-					break;
-				//else{	
-				//	sleep(1); // Delay
-				//	continue;	
-				//}	
-			}	
-
+			if(rcv_get < 1) break;
 			MPI_Recv(diagram, rcv_get*nverts*sizeof(uint8_t), MPI_BYTE, 0, FOR_PROCESSING_TAG, MPI_COMM_WORLD, &status);
-			int size;
             process_one_diagram(nverts, diagram, buffer, size, gale); // The main process
-			MPI_Send(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD);
+			MPI_Isend(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD, &request);
             if (size > 0)
                 MPI_Send(buffer, size*(nverts+5)*sizeof(uint8_t), MPI_BYTE, 0, RESULT_TAG, MPI_COMM_WORLD);
 		}
-		printf ("%d's thread fin  ", rank);
+		//printf ("%d's thread fin  ", rank);
 		MPI_Finalize();
 		return 0;
 	}
@@ -285,67 +277,57 @@ int main(int argc, char *argv[])
 	clock_t begt = clock();
 	// READ AND EVALUATE
 	long long sent = 0; // amount of input
-	long long recieved = 0; // amount of output
-	int rcv_tag = MPI_ANY_TAG;
-	long to_slaves = 0, from_slaves = 0, end_of_file = 0;
+	long long received = 0; // amount of output
+//	int rcv_tag = MPI_ANY_TAG;
+	long long to_slaves = 0, from_slaves = 1 - nthreads, end_of_file = 0;
 	while(!end_of_file || to_slaves != from_slaves) {
-		MPI_Recv(&rcv_get, 1, MPI_INT, MPI_ANY_SOURCE, rcv_tag, MPI_COMM_WORLD, &status);
-		if (status.MPI_TAG == I_AM_FREE_TAG){
-			if (status.MPI_SOURCE != rcv_get)
-				printf ("WARNING: status.MPI_SOURCE != process_num\n");
-			
-			// Read string from file and send to a thread
-			int size;
-			size = fread (diagram, sizeof(uint8_t), nverts, inf);
-			if(size < nverts)
-				size = 0;
-			else
-				size = 1;
-
-			if(size == 0){
-				MPI_Send(&size, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD);
-				rcv_tag = RESULT_READY_TAG;
-				end_of_file = 1;
-			}
-			else{
-				MPI_Send(&size, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD);
-				MPI_Send(diagram, size*nverts*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, FOR_PROCESSING_TAG, MPI_COMM_WORLD);
-				to_slaves++;
-				sent += size;
-                if (sent == 10000 || sent % 100000 == 0){
-                    fprintf (logf, " Sent %d", sent);
-                    if (sent != 0){
-                        clock_t curt = clock();
-                        int sec = (curt - begt)*(inputlen - sent) / (sent*CLOCKS_PER_SEC);
-                        int min = sec / 60;
-                        int hour = min / 60;
-                        fprintf (logf, " (left %d:%02d:%02d)", hour, min%60, sec%60);
-                    }
-                    fflush (logf);
-                }    
-			}
-        }    
-		else {
-			if (status.MPI_TAG != RESULT_READY_TAG){
-				printf ("ERROR: Unexpected status.MPI_TAG = %d\n", status.MPI_TAG);
-				break;
-			}
-            from_slaves++;
-			if (rcv_get > 0){	
-                MPI_Recv(buffer, rcv_get*(nverts+5)*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
-                write_results(outf, out2f, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum);
-                recieved += rcv_get;
-                fflush(outf);
-                if (recieved%1000000 == 0){
-                    fprintf (logf, " Recieve %d (%d calls)", recieved, from_slaves);
-                }
-            }
-            if (end_of_file){
-                MPI_Request request;
-                int send = 0;
-                MPI_Isend(&send, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD, &request);
-            }    
+		MPI_Recv(&rcv_get, 1, MPI_INT, MPI_ANY_SOURCE, RESULT_READY_TAG, MPI_COMM_WORLD, &status);
+        if (status.MPI_TAG != RESULT_READY_TAG){
+			printf ("ERROR: Unexpected status.MPI_TAG = %d\n", status.MPI_TAG);
+			break;
 		}
+        from_slaves++;
+		if (rcv_get > 0){ // Receive results from worker
+            MPI_Recv(buffer, rcv_get*(nverts+5)*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
+            write_results(outf, out2f, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum);
+            received += rcv_get;
+            fflush(outf);
+            if (received%1000000 == 0){
+                fprintf (logf, " Received %d (%d calls)", received, from_slaves);
+            }
+        }
+        if (end_of_file){
+            int send = 0;
+            MPI_Isend(&send, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD, &request);
+            continue;
+        }    
+		// Read diagram from file and send to a thread
+		int size;
+		size = fread (diagram, sizeof(uint8_t), nverts, inf);
+		if(size < nverts){ // The end of input file
+            size = 0;
+            MPI_Isend(&size, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD, &request);
+			end_of_file = 1;
+            continue;
+		}
+        // Send diagram to worker
+        size = 1;
+        MPI_Isend(&size, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD, &request);
+		MPI_Send(diagram, size*nverts*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, FOR_PROCESSING_TAG, MPI_COMM_WORLD);
+		to_slaves++;
+		sent += size;
+        if (sent == 10000 || sent % 100000 == 0){
+            fprintf (logf, " Sent %d", sent);
+            if (sent != 0){
+                clock_t curt = clock();
+                int sec = (curt - begt)*(inputlen - sent) / (sent*CLOCKS_PER_SEC);
+                int min = sec / 60;
+                int hour = min / 60;
+                fprintf (logf, " (left %d:%02d:%02d)", hour, min%60, sec%60);
+            }
+            fflush (logf);
+            fflush (outf);
+        }    
     }
 	clock_t t = clock() - begt;
     fprintf (logf, "\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
@@ -360,7 +342,7 @@ int main(int argc, char *argv[])
     }    
 	fclose (out2f);
 	fclose (logf);
-    printf ("Root finalized\n");
+    //printf ("Root finalized\n");
 	MPI_Finalize();
 	return 0;
 }
