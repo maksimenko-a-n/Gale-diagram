@@ -79,15 +79,15 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
         int max_freev = (gale.nverts <= DIM ? gale.nverts : (2 * DIM - gale.nverts));
         //max_freev = (max_freev < 0 ? 0 : max_freev);
         max_freev = (max_freev < 1 ? 1 : max_freev);
-        int is_write; // Is this diagram good for our purposes?
+        int is_write = 1; // Is this diagram good for our purposes?
         is_write = (freev <= max_freev);
         is_write &= (nfacets <= MAX_FACET);
-        if (!is_2neighborly)
-            is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
+        //if (!is_2neighborly)
+        //    is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
         int big = gale.cofacets_num[DIM] + gale.cofacets_num[DIM+1];
         //is_write &= (big <= small);
-        //is_write &= (big <= 0);
-        //is_write &= (gale.cofacets_num[2] == 0);
+        is_write &= (big <= 0);
+        is_write &= (gale.cofacets_num[2] == 0);
         if (is_write){
             memcpy(cur_diagram+1, diagram, (old_nverts+1)*sizeof(uint8_t));
             cur_diagram[old_nverts+2] = nfacets;
@@ -104,10 +104,15 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
     }
 }
 
-int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num, int &newd, int &min2facets){
+int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num, int &newd, int &min2facets, int &minf, int &maxf, unsigned long int &polynum){
     uint8_t *diagram = buffer;
     for (int n = 0; n < num; n++, diagram += nverts + 4){
+        int nfacets = diagram[nverts+1];
+        int edges = diagram[nverts+2];
+        minf = minf > nfacets ? nfacets : minf;
+        maxf = maxf < nfacets ? nfacets : maxf;
         if (diagram[0] != 1){ // Will be used for the next generation
+            if (edges > 0) polynum++; // The total number of polytopes
             int s = fwrite (diagram+1, sizeof(uint8_t), nverts, outf);
             if (s < nverts){
                 printf ("Write file ERROR: Cann't write %d bytes\n", nverts);
@@ -116,8 +121,6 @@ int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num,
             newd++; // The number of new diagrams
         }    
         if (diagram[0] != 0){ // Write in the readable format
-            int nfacets = diagram[nverts+1];
-            int edges = diagram[nverts+2];
             int ridges = diagram[nverts+3];
             if (edges*2 == nverts*(nverts-1)){
                 // For a 2-neighborly diagram
@@ -178,7 +181,12 @@ int main(int argc, char *argv[])
 		printf ("Write file ERROR: Cann't open the file 'log'\n");
 		return 1;
 	}
-    fprintf (logf, "\nAdd and Proc %s\n", argv[1]);
+    time_t rawtime;
+    time ( &rawtime );
+    fprintf (logf, "\n%sAdd and Proc %s\n", ctime (&rawtime), argv[1]);
+    //struct tm * timeinfo = localtime ( &rawtime );
+    //fprintf (logf, "\n%s\nAdd and Proc %s\n", asctime (timeinfo), argv[1]);
+    
    
     int nverts;
     // Extract the dimension and the number of vertices from the filename
@@ -195,6 +203,10 @@ int main(int argc, char *argv[])
 		printf ("Read file ERROR: Cann't open the file %s\n", argv[1]);
 		return 3;
 	}
+    fseek(inf, 0, SEEK_END); // Go to end of file
+    unsigned long inputlen = ftell(inf)/nverts; // The total number of diagrams
+    fseek(inf, 0, SEEK_SET); // Go to begin of file
+    fprintf (logf, "Input: %d diagrams\n", inputlen);
     // Open the output file
     char outfname[256]; // The output file name
     sprintf (outfname, "%dd%dp.gb", DIM, nverts+1);
@@ -221,27 +233,37 @@ int main(int argc, char *argv[])
     Gale_diagram gale; // The Gale diagram
     // Attention! Cann't use DIM instead of dimension, when compile with -O2
     // gale.dimension = DIM;
-    int newd = 0;
-    int min2facets = 10 * nverts; // Minimum number of facets for a 2-neighborly polytope
-	clock_t t = clock();
+    int savednum = 0;
+    int min2facets = 2 * MAX_FACET; // Minimum number of facets for a 2-neighborly polytope
+    int minf = 2 * MAX_FACET, maxf = 0; // Minimum and maximum number of facets
+    unsigned long int  polynum = 0; // The number of saved polytopes
+	clock_t begt = clock();
     for (int n = 0; ;n++){
-        if (n % 1000000 == 0){
+        if (n % 10000 == 0){
             fprintf (logf, " %d", n);
+            if (n != 0){
+                clock_t curt = clock();
+                int sec = (curt - begt)*(inputlen - n) / (n*CLOCKS_PER_SEC);
+                int min = sec / 60;
+                int hour = min / 60;
+                fprintf (logf, " (left %d:%02d:%02d)", hour, min%60, sec%60);
+            }
             fflush (logf);
         }    
         int s = fread (diagram, sizeof(uint8_t), nverts, inf);
         if (s < nverts) break;
         int num;
         process_one_diagram(nverts, diagram, buffer, num, gale); // The main process
-        write_results(outf, out2f, nverts+1, buffer, num, newd, min2facets);
+        write_results(outf, out2f, nverts+1, buffer, num, savednum, min2facets, minf, maxf, polynum);
     }
-	t = clock() - t;
+	clock_t t = clock() - begt;
     fprintf (logf, "\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
-    fprintf (logf, "New number of diagrams = %d\n", newd);
-    //printf ("New number of diagrams = %d\n", newd);
+    fprintf (logf, "New number of diagrams = %d\n", savednum);
+    fprintf (logf, "min facets = %d, max facets = %d, polytopes num = %d\n", minf, maxf, polynum);
+    //printf ("New number of diagrams = %d\n", savednum);
 	fclose (inf);
 	fclose (outf);
-    if (min2facets < 10 * nverts){
+    if (min2facets < 2 * MAX_FACET){
         fprintf (logf, "Min facets for 2-nghb = %d\n", min2facets);
         fprintf (out2f, "Min facets = %d\n", min2facets);
     }    

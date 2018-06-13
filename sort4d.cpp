@@ -305,7 +305,10 @@ int main(int argc, char *argv[])
 		printf ("Write file ERROR: Cann't open the file 'log'\n");
 		return 1;
 	}
-    fprintf (logf, "\nSortg %s\n", argv[1]);
+    // Print the beginning time in log-file
+    time_t rawtime;
+    time ( &rawtime );
+    fprintf (logf, "\n%sSort %s\n", ctime (&rawtime), argv[1]);
     
     int get_value = get_dv(argv[1], dimension, nverts);
     if (get_value){
@@ -319,6 +322,11 @@ int main(int argc, char *argv[])
 		printf ("Read file ERROR: Cann't open the file %s\n", argv[1]);
 		return 3;
 	}
+    fseek(inf, 0, SEEK_END); // Go to end of file
+    unsigned long inputlen = ftell(inf)/nverts; // The total number of diagrams
+    fseek(inf, 0, SEEK_SET); // Go to begin of file
+    fprintf (logf, "Input: %d diagrams\n", inputlen);
+
     char outfname[256]; // The output file name
     sprintf (outfname, "%dd%ds.gb", dimension, nverts);
     fprintf (logf, "Write in %s\n", outfname);
@@ -329,10 +337,17 @@ int main(int argc, char *argv[])
 	}
     vector<uint8_t *> all_diagrams;
     uint8_t diagram[MAX_VERT];
-	clock_t t = clock();
+	clock_t begt = clock();
     for (int n = 0; ;n++){
-        if (n % 1000000 == 0){
+        if (n % 10000 == 0){
             fprintf (logf, " %d", n);
+            if (n != 0){
+                clock_t curt = clock();
+                int sec = (curt - begt)*(inputlen - n) / (n*CLOCKS_PER_SEC);
+                int min = sec / 60;
+                int hour = min / 60;
+                fprintf (logf, " (left %d:%02d:%02d)", hour, min%60, sec%60);
+            }
             fflush (logf);
         }    
         if (read_diagram_bin(inf, nverts, diagram))
@@ -346,12 +361,13 @@ int main(int argc, char *argv[])
         lex_min(data, diagram, dimension, nverts);
         all_diagrams.push_back(data);
     }
-	t = clock() - t;
+	clock_t t = clock() - begt;
     fprintf (logf, "\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
+    fflush (logf);
 	fclose (inf);
 
 //    nverts++;
-    fprintf (logf, "Totally = %d\n", all_diagrams.size());
+//    fprintf (logf, "Totally = %d\n", all_diagrams.size());
     if (all_diagrams.size() == 0){
         fclose (outf);
         return 0;
