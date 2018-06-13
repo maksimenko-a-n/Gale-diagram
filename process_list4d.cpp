@@ -89,14 +89,14 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
         //max_freev = (max_freev < 0 ? 0 : max_freev);
         max_freev = (max_freev < 1 ? 1 : max_freev);
         int is_write = 1; // Is this diagram good for our purposes?
-        //is_write = (freev <= max_freev);
-        is_write &= (nfacets <= MAX_FACET);
+        is_write = (nfacets <= MAX_FACET);
+        is_write &= (freev <= max_freev);
         if (!is_2neighborly)
             is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
         int big = gale.cofacets_num[DIM] + gale.cofacets_num[DIM+1];
         //is_write &= (big <= small);
-        is_write &= (big <= 0);
-        is_write &= (gale.cofacets_num[2] == 0);
+        //is_write &= (big <= 0);
+        //is_write &= (gale.cofacets_num[2] == 0);
         if (is_write){
             memcpy(cur_diagram+1, diagram, (old_nverts+1)*sizeof(uint8_t));
             cur_diagram[old_nverts+2] = nfacets;
@@ -213,25 +213,26 @@ int main(int argc, char *argv[])
 	if (rank != 0) {
         Gale_diagram gale; // The Gale diagram
 		while(1) {
-			MPI_Send(&rank, 1, MPI_INT, 0, I_AM_FREE_TAG, MPI_COMM_WORLD);
+			MPI_Request request;
+			MPI_Isend(&rank, 1, MPI_INT, 0, I_AM_FREE_TAG, MPI_COMM_WORLD, &request);
 			MPI_Recv(&rcv_get, 1, MPI_INT, 0, TO_WORK_TAG, MPI_COMM_WORLD, &status);
 			if(rcv_get < 1){
-				if (rcv_get < 0)
+				//if (rcv_get < 0)
 					break;
-				else{	
-					// Delay
-					sleep(1);
-					continue;	
-				}	
+				//else{	
+				//	sleep(1); // Delay
+				//	continue;	
+				//}	
 			}	
 
 			MPI_Recv(diagram, rcv_get*nverts*sizeof(uint8_t), MPI_BYTE, 0, FOR_PROCESSING_TAG, MPI_COMM_WORLD, &status);
 			int size;
             process_one_diagram(nverts, diagram, buffer, size, gale); // The main process
 			MPI_Send(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD);
-			MPI_Send(buffer, size*(nverts+5)*sizeof(uint8_t), MPI_BYTE, 0, RESULT_TAG, MPI_COMM_WORLD);
+            if (size > 0)
+                MPI_Send(buffer, size*(nverts+5)*sizeof(uint8_t), MPI_BYTE, 0, RESULT_TAG, MPI_COMM_WORLD);
 		}
-		//printf ("%d's thread fin  ", rank);
+		printf ("%d's thread fin  ", rank);
 		MPI_Finalize();
 		return 0;
 	}
@@ -329,15 +330,21 @@ int main(int argc, char *argv[])
 				printf ("ERROR: Unexpected status.MPI_TAG = %d\n", status.MPI_TAG);
 				break;
 			}
-				
-			MPI_Recv(buffer, rcv_get*(nverts+5)*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
-			from_slaves++;
-            write_results(outf, out2f, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum);
-			recieved += rcv_get;
-			fflush(outf);
-			if (rcv_get > 0 && recieved%1000000 == 0){
-				fprintf (logf, " Recieve %d (%d calls)", recieved, from_slaves);
-			}
+            from_slaves++;
+			if (rcv_get > 0){	
+                MPI_Recv(buffer, rcv_get*(nverts+5)*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
+                write_results(outf, out2f, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum);
+                recieved += rcv_get;
+                fflush(outf);
+                if (recieved%1000000 == 0){
+                    fprintf (logf, " Recieve %d (%d calls)", recieved, from_slaves);
+                }
+            }
+            if (end_of_file){
+                MPI_Request request;
+                int send = 0;
+                MPI_Isend(&send, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD, &request);
+            }    
 		}
     }
 	clock_t t = clock() - begt;
@@ -353,9 +360,7 @@ int main(int argc, char *argv[])
     }    
 	fclose (out2f);
 	fclose (logf);
-	rcv_get = -1;
-	for (int i = 1; i < nthreads; i++)
-		MPI_Send(&rcv_get, 1, MPI_INT, i, TO_WORK_TAG, MPI_COMM_WORLD);
+    printf ("Root finalized\n");
 	MPI_Finalize();
 	return 0;
 }
