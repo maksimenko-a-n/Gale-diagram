@@ -1,6 +1,15 @@
 #include "gale-diagram4d.hpp"
 #include <string.h> // memcmp()
 #include <time.h>
+#include <unistd.h> // sleep()
+#include <mpi.h>
+
+#define I_AM_FREE_TAG 2
+#define TO_WORK_TAG 4
+#define FOR_PROCESSING_TAG 8
+#define RESULT_TAG 16
+#define RESULT_READY_TAG 32
+//#define BUNCH 64
 
 // Extract the dimension and the number of vertices from the filename
 int get_dv(char *filename, int &nv){
@@ -80,10 +89,10 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
         //max_freev = (max_freev < 0 ? 0 : max_freev);
         max_freev = (max_freev < 1 ? 1 : max_freev);
         int is_write = 1; // Is this diagram good for our purposes?
-        is_write = (freev <= max_freev);
+        //is_write = (freev <= max_freev);
         is_write &= (nfacets <= MAX_FACET);
-        //if (!is_2neighborly)
-        //    is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
+        if (!is_2neighborly)
+            is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
         int big = gale.cofacets_num[DIM] + gale.cofacets_num[DIM+1];
         //is_write &= (big <= small);
         is_write &= (big <= 0);
@@ -109,9 +118,9 @@ int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num,
     for (int n = 0; n < num; n++, diagram += nverts + 4){
         int nfacets = diagram[nverts+1];
         int edges = diagram[nverts+2];
-        minf = minf > nfacets ? nfacets : minf;
-        maxf = maxf < nfacets ? nfacets : maxf;
         if (diagram[0] != 1){ // Will be used for the next generation
+            minf = minf > nfacets ? nfacets : minf;
+            maxf = maxf < nfacets ? nfacets : maxf;
             if (edges > 0) polynum++; // The total number of polytopes
             int s = fwrite (diagram+1, sizeof(uint8_t), nverts, outf);
             if (s < nverts){
@@ -171,32 +180,76 @@ and, if Yes,
 
 int main(int argc, char *argv[])
 {
+	MPI_Init(&argc, &argv); // Init MPI
 	if (argc < 2){
-		printf("Usage: gale [file name]\n");
+		printf("Usage: proc [file name]\n");
+		MPI_Finalize();
 		return 1;
 	}
-
- 	FILE *logf = fopen("log", "a");
-	if (logf == NULL){
-		printf ("Write file ERROR: Cann't open the file 'log'\n");
-		return 1;
-	}
-    time_t rawtime;
-    time ( &rawtime );
-    fprintf (logf, "\n%sAdd and Proc %s\n", ctime (&rawtime), argv[1]);
-    //struct tm * timeinfo = localtime ( &rawtime );
-    //fprintf (logf, "\n%s\nAdd and Proc %s\n", asctime (timeinfo), argv[1]);
-    
+   
    
     int nverts;
     // Extract the dimension and the number of vertices from the filename
     int get_value = get_dv(argv[1], nverts);
     if (get_value){
         printf ("Wrong file name: get_dv() error %d\n", get_value);
+		MPI_Finalize();
         return 2;
     }
-    fprintf (logf, "dim = %d, nverts = %d\n", DIM, nverts);
+
+    uint8_t diagram[MAX_VERT];
+	uint8_t buffer[Nall * (nverts+5)]; // Every block has (nverts+5) bytes
+    // The first byte -- type: ordinary diagram (0) or special one (1)
+    // [1, nverts] -- points; nverts+1 -- nfacets; 
+    // nverts+2 -- edges (or 0 if it is not a polytope); nverts+3 -- ridges
     
+	// Get the rank of the curent thread and the number of all threads
+	int rank, nthreads;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	MPI_Comm_size(MPI_COMM_WORLD, &nthreads);
+    int rcv_get;
+	MPI_Status status;
+
+	if (rank != 0) {
+        Gale_diagram gale; // The Gale diagram
+		while(1) {
+			MPI_Send(&rank, 1, MPI_INT, 0, I_AM_FREE_TAG, MPI_COMM_WORLD);
+			MPI_Recv(&rcv_get, 1, MPI_INT, 0, TO_WORK_TAG, MPI_COMM_WORLD, &status);
+			if(rcv_get < 1){
+				if (rcv_get < 0)
+					break;
+				else{	
+					// Delay
+					sleep(1);
+					continue;	
+				}	
+			}	
+
+			MPI_Recv(diagram, rcv_get*nverts*sizeof(uint8_t), MPI_BYTE, 0, FOR_PROCESSING_TAG, MPI_COMM_WORLD, &status);
+			int size;
+            process_one_diagram(nverts, diagram, buffer, size, gale); // The main process
+			MPI_Send(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD);
+			MPI_Send(buffer, size*(nverts+5)*sizeof(uint8_t), MPI_BYTE, 0, RESULT_TAG, MPI_COMM_WORLD);
+		}
+		//printf ("%d's thread fin  ", rank);
+		MPI_Finalize();
+		return 0;
+	}
+
+ 	FILE *logf = fopen("log", "a");
+	if (logf == NULL){
+		printf ("Write file ERROR: Cann't open the file 'log'\n");
+		MPI_Finalize();
+		return 1;
+	}
+    // Print the start time in log-file
+    time_t rawtime;
+    time ( &rawtime );
+    fprintf (logf, "\n%sAdd and Proc %s\nOn %d threads\n", ctime (&rawtime), argv[1], nthreads);
+    //struct tm * timeinfo = localtime ( &rawtime );
+    //fprintf (logf, "\n%s\nAdd and Proc %s\n", asctime (timeinfo), argv[1]);
+    fprintf (logf, "dim = %d, nverts = %d\n", DIM, nverts);
+
     // Open the input file
 	FILE *inf = fopen(argv[1], "rb");
 	if (inf == NULL){
@@ -224,37 +277,68 @@ int main(int argc, char *argv[])
 		return 5;
 	}
 
-    uint8_t diagram[MAX_VERT];
-	uint8_t buffer[Nall * (nverts+5)]; // Every block has (nverts+5) bytes
-    // The first byte -- type: ordinary diagram (0) or special one (1)
-    // [1, nverts] -- points; nverts+1 -- nfacets; 
-    // nverts+2 -- edges (or 0 if it is not a polytope); nverts+3 -- ridges
-
-    Gale_diagram gale; // The Gale diagram
-    // Attention! Cann't use DIM instead of dimension, when compile with -O2
-    // gale.dimension = DIM;
     int savednum = 0;
-    int min2facets = 2 * MAX_FACET; // Minimum number of facets for a 2-neighborly polytope
-    int minf = 2 * MAX_FACET, maxf = 0; // Minimum and maximum number of facets
+    int min2facets = MAX_FACET+1; // Minimum number of facets for a 2-neighborly polytope
+    int minf = MAX_FACET+1, maxf = 0; // Minimum and maximum number of facets
     unsigned long int  polynum = 0; // The number of saved polytopes
 	clock_t begt = clock();
-    for (int n = 0; ;n++){
-        if (n % 10000 == 0){
-            fprintf (logf, " %d", n);
-            if (n != 0){
-                clock_t curt = clock();
-                int sec = (curt - begt)*(inputlen - n) / (n*CLOCKS_PER_SEC);
-                int min = sec / 60;
-                int hour = min / 60;
-                fprintf (logf, " (left %d:%02d:%02d)", hour, min%60, sec%60);
-            }
-            fflush (logf);
+	// READ AND EVALUATE
+	long long sent = 0; // amount of input
+	long long recieved = 0; // amount of output
+	int rcv_tag = MPI_ANY_TAG;
+	long to_slaves = 0, from_slaves = 0, end_of_file = 0;
+	while(!end_of_file || to_slaves != from_slaves) {
+		MPI_Recv(&rcv_get, 1, MPI_INT, MPI_ANY_SOURCE, rcv_tag, MPI_COMM_WORLD, &status);
+		if (status.MPI_TAG == I_AM_FREE_TAG){
+			if (status.MPI_SOURCE != rcv_get)
+				printf ("WARNING: status.MPI_SOURCE != process_num\n");
+			
+			// Read string from file and send to a thread
+			int size;
+			size = fread (diagram, sizeof(uint8_t), nverts, inf);
+			if(size < nverts)
+				size = 0;
+			else
+				size = 1;
+
+			if(size == 0){
+				MPI_Send(&size, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD);
+				rcv_tag = RESULT_READY_TAG;
+				end_of_file = 1;
+			}
+			else{
+				MPI_Send(&size, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD);
+				MPI_Send(diagram, size*nverts*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, FOR_PROCESSING_TAG, MPI_COMM_WORLD);
+				to_slaves++;
+				sent += size;
+                if (sent == 10000 || sent % 100000 == 0){
+                    fprintf (logf, " Sent %d", sent);
+                    if (sent != 0){
+                        clock_t curt = clock();
+                        int sec = (curt - begt)*(inputlen - sent) / (sent*CLOCKS_PER_SEC);
+                        int min = sec / 60;
+                        int hour = min / 60;
+                        fprintf (logf, " (left %d:%02d:%02d)", hour, min%60, sec%60);
+                    }
+                    fflush (logf);
+                }    
+			}
         }    
-        int s = fread (diagram, sizeof(uint8_t), nverts, inf);
-        if (s < nverts) break;
-        int num;
-        process_one_diagram(nverts, diagram, buffer, num, gale); // The main process
-        write_results(outf, out2f, nverts+1, buffer, num, savednum, min2facets, minf, maxf, polynum);
+		else {
+			if (status.MPI_TAG != RESULT_READY_TAG){
+				printf ("ERROR: Unexpected status.MPI_TAG = %d\n", status.MPI_TAG);
+				break;
+			}
+				
+			MPI_Recv(buffer, rcv_get*(nverts+5)*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
+			from_slaves++;
+            write_results(outf, out2f, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum);
+			recieved += rcv_get;
+			fflush(outf);
+			if (rcv_get > 0 && recieved%1000000 == 0){
+				fprintf (logf, " Recieve %d (%d calls)", recieved, from_slaves);
+			}
+		}
     }
 	clock_t t = clock() - begt;
     fprintf (logf, "\nElapsed time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
@@ -263,11 +347,15 @@ int main(int argc, char *argv[])
     //printf ("New number of diagrams = %d\n", savednum);
 	fclose (inf);
 	fclose (outf);
-    if (min2facets < 2 * MAX_FACET){
+    if (min2facets <= MAX_FACET){
         fprintf (logf, "Min facets for 2-nghb = %d\n", min2facets);
         fprintf (out2f, "Min facets = %d\n", min2facets);
     }    
 	fclose (out2f);
 	fclose (logf);
+	rcv_get = -1;
+	for (int i = 1; i < nthreads; i++)
+		MPI_Send(&rcv_get, 1, MPI_INT, i, TO_WORK_TAG, MPI_COMM_WORLD);
+	MPI_Finalize();
 	return 0;
 }

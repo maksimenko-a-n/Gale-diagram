@@ -305,7 +305,7 @@ int main(int argc, char *argv[])
 		printf ("Write file ERROR: Cann't open the file 'log'\n");
 		return 1;
 	}
-    // Print the beginning time in log-file
+    // Print the start time in log-file
     time_t rawtime;
     time ( &rawtime );
     fprintf (logf, "\n%sSort %s\n", ctime (&rawtime), argv[1]);
@@ -339,7 +339,7 @@ int main(int argc, char *argv[])
     uint8_t diagram[MAX_VERT];
 	clock_t begt = clock();
     for (int n = 0; ;n++){
-        if (n % 10000 == 0){
+        if (n == 100000 || n % 1000000 == 0){
             fprintf (logf, " %d", n);
             if (n != 0){
                 clock_t curt = clock();
