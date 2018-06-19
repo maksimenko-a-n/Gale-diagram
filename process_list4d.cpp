@@ -1,7 +1,7 @@
 #include "gale-diagram4d.hpp"
 #include <string.h> // memcmp()
 #include <time.h>
-#include <unistd.h> // sleep()
+//#include <unistd.h> // sleep()
 #include <mpi.h>
 
 #define I_AM_FREE_TAG 2
@@ -247,6 +247,7 @@ int main(int argc, char *argv[])
 	FILE *inf = fopen(argv[1], "rb");
 	if (inf == NULL){
 		printf ("Read file ERROR: Cann't open the file %s\n", argv[1]);
+		MPI_Finalize();
 		return 3;
 	}
     fseek(inf, 0, SEEK_END); // Go to end of file
@@ -260,6 +261,7 @@ int main(int argc, char *argv[])
 	FILE *outf = fopen(outfname, "wb");
 	if (outf == NULL){
 		printf ("Write file ERROR: Cann't open the file %s\n", outfname);
+		MPI_Finalize();
 		return 4;
 	}
     // Open the output file for 2-neighborly polytopes
@@ -267,6 +269,7 @@ int main(int argc, char *argv[])
 	FILE *out2f = fopen(outfname, "w");
 	if (out2f == NULL){
 		printf ("Write file ERROR: Cann't open the file %s\n", outfname);
+		MPI_Finalize();
 		return 5;
 	}
 
