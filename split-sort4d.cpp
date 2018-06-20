@@ -1,11 +1,8 @@
 #include <stdio.h>
-#include <string.h> // memcmp()
 #include <stdlib.h>
-#include <vector>  
-#include <math.h>
+#include <string.h> // memcmp()
 #include <stdint.h>  // uint32_t
-#include <float.h>  // DBL_EPSILON
-#include <time.h>
+//#include <time.h>
 
 #define DIM 4 // The maximum dimension of the Gale diagram (GD)
 #define MAX_VERT 20 // The bit length of the type uint32_t
@@ -64,62 +61,68 @@ int main(int argc, char *argv[])
 	}
     fseek(inf, 0, SEEK_END); // Go to end of file
     unsigned long long inputlen = ftell(inf); // The length of the input file
-    const unsigned long long MemorySize = 1E10;
-    int nthreads = ((inputlen-1) / MemorySize) + 1;
-    printf ("%d threads\n", nthreads);
+    fseek(inf, 0, SEEK_SET); // Go to begin of file
+    const unsigned long long MemorySize = 16E9; // RAM size
+    //const unsigned long long MemorySize = 4294967296;
+    //const unsigned long long MemorySize = 4E7; // RAM size
+    int nfiles = ((inputlen-1) / MemorySize) + 1; // The number of parts
+    printf ("%d files will be written\n", nfiles);
     inputlen /=  nverts * sizeof(uint8_t); // The total number of diagrams
-    unsigned long long one_file_size = inputlen / nthreads; // The num of diagrams in one new file
-    //fseek(inf, (nthreads - rank - 1) * one_file_size * (nverts * sizeof(uint8_t)), SEEK_SET); // Go to begin of block
-    fseek(inf, 0, SEEK_SET); // Go to begin of block
+    unsigned long long one_file_size = inputlen / nfiles; // The num of diagrams in one new file
+    //fseek(inf, (nfiles - rank - 1) * one_file_size * (nverts * sizeof(uint8_t)), SEEK_SET); // Go to begin of block
 
-    vector<uint8_t *> all_diagrams;
-    for (int rank = 0; rank < nthreads; rank++){
+    printf ("Allocate memory\n");
+    uint8_t **all_diagrams = (uint8_t **)malloc(sizeof(uint8_t *) * one_file_size);
+    if (all_diagrams == NULL){
+        printf ("ERROR: Cann't allocate memory for all_diagrams\n");
+        return 4;
+    }
+    for (unsigned long i = 0; i < one_file_size; i++){
+        uint8_t *data = (uint8_t *)malloc(sizeof(uint8_t)*(nverts));
+        if (data == NULL){
+            printf ("ERROR: Out of memory on %d step\n", i);
+            return 5;
+        }
+        all_diagrams[i] = data;
+    }        
+    
+    for (int part = 0; part < nfiles; part++){
         char outfname[256]; // The output file name
-        sprintf (outfname, "%da%d", nverts, rank);
+        sprintf (outfname, "%da%d", nverts, part);
         FILE *outf = fopen(outfname, "wb");
         if (outf == NULL){
             printf ("Write file ERROR: Cann't open the file %s\n", outfname);
-            return 4;
-        }
-        printf ("Write in %s\n", outfname);
-
-        for (unsigned long long n = 0; n < one_file_size; n++){
-            uint8_t *data = (uint8_t *)malloc(sizeof(uint8_t)*(nverts));
-            if (data == NULL){
-                printf ("ERROR: Out of memory\n");
-                break;
-            }
-            int read_size = fread (data, sizeof(uint8_t), nverts, inf);
-            if(read_size < nverts){ // The end of input file
-                free(data);
-                break;
-            }
-            all_diagrams.push_back(data);
+            break;
         }
 
-        if (all_diagrams.size() == 0){
-            fclose (outf);
-            return 0;
+        printf ("%d-th block: Read", part);
+        unsigned long num;
+        for (num = 0; num < one_file_size; num++){
+            if(fread (all_diagrams[num], sizeof(uint8_t), nverts, inf) < nverts)
+                break; // The end of input file
         }
+        if (num == 0)  break;
     
-        qsort (all_diagrams.data(), all_diagrams.size(), sizeof(uint8_t *), compare_vertices);
+        printf (", Sort");
+        qsort (all_diagrams, num, sizeof(uint8_t *), compare_vertices);
 
-        uint8_t **pt = all_diagrams.data();
+        printf (", Write in %s", outfname);
+        uint8_t **pt = all_diagrams;
         fwrite (*pt, sizeof(uint8_t), nverts, outf);
-        int writen = 1;
-        for (int i = 1; i < all_diagrams.size(); i++, pt++){
+        //unsigned long writen = 1;
+        for (unsigned long i = 1; i < num; i++, pt++){
             if (compare_vertices(pt, pt+1)){
                 fwrite (*(pt+1), sizeof(uint8_t), nverts, outf);
-                writen++;
+                //writen++;
             }    
-            free(*pt);
-            *pt = NULL;
         }
-        free(*pt);
-        *pt = NULL;
-        all_diagrams.clear();
         fclose (outf);
+        printf ("\n");
     }
     fclose (inf);
+    printf ("Deallocate memory");
+    for (unsigned long i = 0; i < one_file_size; i++)
+        free(all_diagrams[i]);
+    free(all_diagrams);
 	return 0;
 }
