@@ -107,14 +107,12 @@ void permute_coord(uint8_t *output, uint8_t *input, int nv, char *permut){
 }
 
 // Find the lexicographically minimal and write it in output
-void lex_min(uint8_t *output, uint8_t *input, int nv){
-    vector< vector<char> > all_permutations;
-    all_permutations = gen_permute();
-    int npermut = all_permutations.size();
+void lex_min(uint8_t *output, uint8_t *input, int nv, vector< vector<char> > *all_permutations){
+    int npermut = all_permutations->size();
     output[0] = ~(uint8_t)0;
     uint8_t current1[MAX_VERT], current2[MAX_VERT];
     for (int i = 0; i < npermut; i++){ // Choose permutation of coordinates
-        permute_coord(current1, input, nv, all_permutations[i].data());
+        permute_coord(current1, input, nv, (*all_permutations)[i].data());
         int nreflections = (1 << DIM);
 /*        printf ("Perm:");
         for (int j = 0; j < dim; j++)
@@ -123,7 +121,7 @@ void lex_min(uint8_t *output, uint8_t *input, int nv){
 */        for (int j = 0; j < nreflections; j++){ // Choose reflection
             uint8_t mask = 0; // mask for reflections
             uint8_t mask2 = 0b10; // one-bit reflection
-            uint8_t mask3 = 1; // one-bit reflection
+            uint8_t mask3 = 1; // mask for zeroes
             int x, k;
 //            printf ("Refl:");
             for (x = j, k = 0; k < DIM; k++, x >>= 1, mask2 <<= 2){
@@ -222,6 +220,8 @@ int main(int argc, char *argv[])
     MPI_Request request;
 
 	if (rank != 0) {
+        vector< vector<char> > all_permutations;
+        all_permutations = gen_permute();
 		int size = 0;
 		MPI_Isend(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD, &request);
 		while(1) {
@@ -230,7 +230,7 @@ int main(int argc, char *argv[])
 			if(size < 1) break;
 			MPI_Recv(diagram, size*nverts*sizeof(uint8_t), MPI_BYTE, 0, FOR_PROCESSING_TAG, MPI_COMM_WORLD, &status);
             for (int i = 0; i < size; i++)
-                lex_min(sorted + i*nverts, diagram + i*nverts, nverts);  // The main process
+                lex_min(sorted + i*nverts, diagram + i*nverts, nverts, &all_permutations);  // The main process
 			MPI_Isend(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD, &request);
             MPI_Send(sorted, size*nverts*sizeof(uint8_t), MPI_BYTE, 0, RESULT_TAG, MPI_COMM_WORLD);
 		}

@@ -81,11 +81,13 @@ int main(int argc, char *argv[])
     char outfname[256]; // The output file name
     sprintf (outfname, "%dd%ds.gb", DIM, nverts);
     fprintf (logf, "Write in %s\n", outfname);
+    fflush (logf);
 	FILE *outf = fopen(outfname, "wb");
 	if (outf == NULL){
 		printf ("Write file ERROR: Cann't open the file %s\n", outfname);
 		return 4;
 	}
+
     vector<uint8_t *> all_diagrams;
 	clock_t begt = clock();
     for (int n = 0; ;n++){
@@ -108,11 +110,13 @@ int main(int argc, char *argv[])
         fclose (outf);
         return 0;
     }
+    fflush (logf);
     
 	clock_t t = clock();
     qsort (all_diagrams.data(), all_diagrams.size(), sizeof(uint8_t *), compare_vertices);
 	t = clock() - t;
     fprintf (logf, "Sort time: %4.3f sec\n", ((float)t)/CLOCKS_PER_SEC);
+    fflush (logf);
 
     uint8_t **pt = all_diagrams.data();
     fwrite (*pt, sizeof(uint8_t), nverts, outf);

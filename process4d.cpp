@@ -2,6 +2,7 @@
 #include <string.h> // memcmp()
 #include <time.h>
 //#include <unistd.h> // sleep()
+#include <vector> 
 #include <mpi.h>
 
 #define I_AM_FREE_TAG 2
@@ -31,7 +32,106 @@ int get_dv(char *filename, int &nv){
     return 0;
 }
 
-void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int &num, Gale_diagram &gale){
+
+void recursive_permute(vector< vector<char> > &array, vector<char> &cur_perm, int step){
+    if (step == DIM-1){
+        array.push_back(vector<char>(cur_perm));
+        return;
+    }
+        
+    int x = cur_perm[step];
+    for(int i = step; i < DIM; i++){
+        cur_perm[step] = cur_perm[i];
+        cur_perm[i] = x;
+        recursive_permute(array, cur_perm, step+1);
+        cur_perm[i] = cur_perm[step];
+        cur_perm[step] = x;
+    }
+}
+
+vector< vector<char> > gen_permute(){
+    int nperm = 1, i, j;
+    for (i = 2; i <= DIM; i++)
+        nperm *= i;
+    vector< vector<char> > permut_array; // The output
+    vector<char> cur_permute(DIM,0);
+    for (i = 0; i < DIM; i++)
+        cur_permute[i] = i;
+    recursive_permute(permut_array, cur_permute, 0);
+    return permut_array;
+}
+
+// Transform vertices to output with permutations of coordinates
+void permute_coord(uint8_t *output, uint8_t *input, int nv, char *permut){
+    for (int i = 0; i < nv; i++){
+        output[i] = 0;
+        uint8_t x = input[i];
+        for (int j = 0; j < DIM; j++, x >>= 2){
+            int p = permut[j] * 2;
+            output[i] |= ((x & 0b11) << p);
+        }    
+    }    
+}
+
+// Find the lexicographically minimal and write it in output
+void lex_min(uint8_t *output, uint8_t *input, int size, vector< vector<char> > *all_permutations){
+    int npermut = all_permutations->size();
+    output[0] = ~(uint8_t)0;
+    uint8_t current1[MAX_VERT], current2[MAX_VERT];
+    for (int i = 0; i < npermut; i++){ // Choose permutation of coordinates
+        permute_coord(current1, input, size, (*all_permutations)[i].data());
+        int nreflections = (1 << DIM);
+        for (int j = 0; j < nreflections; j++){ // Choose reflection
+            uint8_t mask = 0; // mask for reflections
+            uint8_t mask2 = 0b10; // one-bit reflection
+            uint8_t mask3 = 1; // mask for zeroes
+            int x, k;
+            for (x = j, k = 0; k < DIM; k++, x >>= 1, mask2 <<= 2){
+                mask |= (x&1) * mask2;
+                mask3 |= (mask3 << 2);
+            }    
+            for (k = 0; k < size; k++){ // Realize reflection
+                uint8_t cur = current1[k];
+                uint8_t y;
+                y = ((cur >> 1) | (~cur)) & mask3; // Some magic for zeroes 0b01
+                y |= y << 1;
+                current2[k] = cur ^ (mask & y);
+            }    
+            int is_compare = 1; // Do compare current2 and output?
+            // Bubble sort
+            for (k = 0; k < size-1; k++){ // Sorting of current2 and comparing with output
+                int m_min = k;
+                int min = current2[m_min];
+                for (int m = k+1; m < size; m++){
+                    if (min > current2[m]){
+                        m_min = m;
+                        min = current2[m_min];
+                    }    
+                }        
+                if (is_compare){
+                    if (min > output[k])
+                        break;
+                    if (min < output[k]){
+                        output[k] = min;
+                        is_compare = 0;
+                    }    
+                }    
+                else
+                    output[k] = min;
+                // Swap    
+                current2[m_min] = current2[k];
+                current2[k] = min;
+            }
+            if (k == size-1){
+                if ((!is_compare) || current2[k] < output[k]){
+                    output[k] = current2[k];
+                }    
+            }
+        }
+    }
+};
+
+void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int &num, Gale_diagram &gale, vector< vector<char> > *all_permutations){
     num = 0;
     gale.nverts = old_nverts;
     gale.convert_bin2vertices(diagram);
@@ -98,7 +198,8 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
         //is_write &= (big <= 0);
         //is_write &= (gale.cofacets_num[2] == 0);
         if (is_write){
-            memcpy(cur_diagram+1, diagram, (old_nverts+1)*sizeof(uint8_t));
+            lex_min(cur_diagram+1, diagram, old_nverts+1, all_permutations);  // Normalize points in the diagram
+            //memcpy(cur_diagram+1, diagram, (old_nverts+1)*sizeof(uint8_t));
             cur_diagram[old_nverts+2] = nfacets;
             cur_diagram[old_nverts+3] = edges;
             cur_diagram[old_nverts+4] = ridges;
@@ -188,7 +289,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
    
-   
     int nverts;
     // Extract the dimension and the number of vertices from the filename
     int get_value = get_dv(argv[1], nverts);
@@ -214,13 +314,15 @@ int main(int argc, char *argv[])
 
 	if (rank != 0) {
         Gale_diagram gale; // The Gale diagram
+        vector< vector<char> > all_permutations;
+        all_permutations = gen_permute();
 		int size = 0;
 		MPI_Isend(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD, &request);
 		while(1) {
 			MPI_Recv(&rcv_get, 1, MPI_INT, 0, TO_WORK_TAG, MPI_COMM_WORLD, &status);
 			if(rcv_get < 1) break;
 			MPI_Recv(diagram, rcv_get*nverts*sizeof(uint8_t), MPI_BYTE, 0, FOR_PROCESSING_TAG, MPI_COMM_WORLD, &status);
-            process_one_diagram(nverts, diagram, buffer, size, gale); // The main process
+            process_one_diagram(nverts, diagram, buffer, size, gale, &all_permutations); // The main process
 			MPI_Isend(&size, 1, MPI_INT, 0, RESULT_READY_TAG, MPI_COMM_WORLD, &request);
             if (size > 0)
                 MPI_Send(buffer, size*(nverts+5)*sizeof(uint8_t), MPI_BYTE, 0, RESULT_TAG, MPI_COMM_WORLD);
@@ -322,7 +424,7 @@ int main(int argc, char *argv[])
 		MPI_Send(diagram, size*nverts*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, FOR_PROCESSING_TAG, MPI_COMM_WORLD);
 		to_slaves++;
 		sent += size;
-        if (sent == 10000 || sent % 100000 == 0){
+        if (sent == 50000 || sent % 1000000 == 0){
             fprintf (logf, " Sent %d", sent);
             if (sent != 0){
                 clock_t curt = clock();
