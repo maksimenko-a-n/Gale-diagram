@@ -193,6 +193,7 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
         is_write &= (freev <= max_freev);
         if (!is_2neighborly)
             is_write &= (ispoly && nfacets < MAX_FACET-1) || (nfacets < MAX_FACET-2);
+        is_write &= ispoly; // Attention!
         int big = gale.cofacets_num[DIM] + gale.cofacets_num[DIM+1];
         //is_write &= (big <= small);
         //is_write &= (big <= 0);
@@ -214,7 +215,7 @@ void process_one_diagram(int old_nverts, uint8_t *diagram, uint8_t *buffer, int 
     }
 }
 
-int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num, int &newd, int &min2facets, int &minf, int &maxf, unsigned long &polynum, unsigned long *distribution){
+int write_results(FILE *outf, FILE *out2f, FILE *out2ftxt, int nverts, uint8_t *buffer, int num, long long &savednum, int &min2facets, int &minf, int &maxf, long long &polynum, long long *distribution){
     uint8_t *diagram = buffer;
     for (int n = 0; n < num; n++, diagram += nverts + 4){
         int nfacets = diagram[nverts+1];
@@ -228,31 +229,39 @@ int write_results(FILE *outf, FILE *out2f, int nverts, uint8_t *buffer, int num,
                 printf ("Write file ERROR: Cann't write %d bytes\n", nverts);
                 return 1;
             }
-            newd++; // The number of new diagrams
+            savednum++; // The number of saved diagrams
             distribution[nfacets] += 1;
         }    
-        if (diagram[0] != 0){ // Write in the readable format
+        if (diagram[0] != 0){ // Write special polytopes 
+            // Write in the binary format
+            int s = fwrite (diagram+1, sizeof(uint8_t), nverts, out2f);
+            if (s < nverts){
+                printf ("Write file ERROR: Cann't write %d bytes\n", nverts);
+                return 2;
+            }
+            fflush (out2f);
+             // Write in the readable format
             int ridges = diagram[nverts+3];
             if (edges*2 == nverts*(nverts-1)){
                 // For a 2-neighborly diagram
                 if (min2facets > nfacets)
                     min2facets = nfacets;
-                fprintf (out2f, "b 2\n");
+                fprintf (out2ftxt, "b 2\n");
             }    
             if (edges > 0 && (ridges*2 == nfacets*(nfacets-1))){
                 // For a dual 2-neighborly diagram
-                fprintf (out2f, "b dual\n");
+                fprintf (out2ftxt, "b dual\n");
             }    
             for (int i = 1; i <= nverts; i++){
                 uint8_t x = diagram[i];
                 for (int j = 0; j < DIM; j++, x >>= 2)
-                    fprintf (out2f, " %2d", (x & 0b11) - 1);
-                fprintf (out2f, "\n");
+                    fprintf (out2ftxt, " %2d", (x & 0b11) - 1);
+                fprintf (out2ftxt, "\n");
             }
-            fprintf (out2f, "f=%d; e=%d\nr=%d\ne\n", nfacets, edges, ridges);
-            //fprintf (out2f, "v = %d, maxv = %d, multiplicity = %d\n", freev, max_freev, multiplicity);
-            //write_incmatrix (out2f, nfacets, gale.nverts, gale.facet_vertex);
-            fflush (out2f);
+            fprintf (out2ftxt, "f=%d; e=%d\nr=%d\ne\n", nfacets, edges, ridges);
+            //fprintf (out2ftxt, "v = %d, maxv = %d, multiplicity = %d\n", freev, max_freev, multiplicity);
+            //write_incmatrix (out2ftxt, nfacets, gale.nverts, gale.facet_vertex);
+            fflush (out2ftxt);
         }
     }
     return 0;
@@ -354,7 +363,7 @@ int main(int argc, char *argv[])
 		return 3;
 	}
     fseek(inf, 0, SEEK_END); // Go to end of file
-    unsigned long inputlen = ftell(inf)/nverts; // The total number of diagrams
+    long long inputlen = ftell(inf)/nverts; // The total number of diagrams
     fseek(inf, 0, SEEK_SET); // Go to begin of file
     fprintf (logf, "Input: %d diagrams\n", inputlen);
     // Open the output file
@@ -367,21 +376,29 @@ int main(int argc, char *argv[])
 		MPI_Finalize();
 		return 4;
 	}
-    // Open the output file for 2-neighborly polytopes
-    sprintf (outfname, "%dd%d-2ng.gs", DIM, nverts+1);
-	FILE *out2f = fopen(outfname, "w");
+    // Open the binary output file for 2-neighborly polytopes
+    sprintf (outfname, "%dd%d-2ng.gb", DIM, nverts+1);
+	FILE *out2f = fopen(outfname, "wb");
 	if (out2f == NULL){
 		printf ("Write file ERROR: Cann't open the file %s\n", outfname);
 		MPI_Finalize();
 		return 5;
 	}
+    // Open the txt-file for 2-neighborly polytopes
+    sprintf (outfname, "%dd%d-2ng.gs", DIM, nverts+1);
+	FILE *out2ftxt = fopen(outfname, "w");
+	if (out2ftxt == NULL){
+		printf ("Write file ERROR: Cann't open the file %s\n", outfname);
+		MPI_Finalize();
+		return 5;
+	}
 
-    int savednum = 0;
+    long long savednum = 0;
     int min2facets = MAX_FACET+1; // Minimum number of facets for a 2-neighborly polytope
     int minf = MAX_FACET+1, maxf = 0; // Minimum and maximum number of facets
-    unsigned long polynum = 0; // The number of saved polytopes
-    unsigned long distribution[MAX_FACET+1]; // distribution[i] -- the num of diagrams with i facets
-    memset(distribution, 0, (MAX_FACET+1)*sizeof(unsigned long));
+    long long polynum = 0; // The number of saved polytopes
+    long long distribution[MAX_FACET+1]; // distribution[i] -- the num of diagrams with i facets
+    memset(distribution, 0, (MAX_FACET+1)*sizeof(long long));
 	clock_t begt = clock();
 	// READ AND EVALUATE
 	long long sent = 0; // amount of input
@@ -397,13 +414,12 @@ int main(int argc, char *argv[])
         from_slaves++;
 		if (rcv_get > 0){ // Receive results from worker
             MPI_Recv(buffer, rcv_get*(nverts+5)*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, RESULT_TAG, MPI_COMM_WORLD, &status);
-            write_results(outf, out2f, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum, distribution);
+            write_results(outf, out2f, out2ftxt, nverts+1, buffer, rcv_get, savednum, min2facets, minf, maxf, polynum, distribution);
             received += rcv_get;
             fflush(outf);
-            if (received%1000000 == 0){
-                fprintf (logf, " Received %d (%d calls)", received, from_slaves);
-            }
         }
+        if (from_slaves%10000000 == 0)
+            fprintf (logf, " Received %d (%d calls)", received, from_slaves);
         if (end_of_file){
             int send = 0;
             MPI_Isend(&send, 1, MPI_INT, status.MPI_SOURCE, TO_WORK_TAG, MPI_COMM_WORLD, &request);
@@ -424,7 +440,7 @@ int main(int argc, char *argv[])
 		MPI_Send(diagram, size*nverts*sizeof(uint8_t), MPI_BYTE, status.MPI_SOURCE, FOR_PROCESSING_TAG, MPI_COMM_WORLD);
 		to_slaves++;
 		sent += size;
-        if (sent == 50000 || sent % 1000000 == 0){
+        if (sent == 100000 || sent % 10000000 == 0){
             fprintf (logf, " Sent %d", sent);
             if (sent != 0){
                 clock_t curt = clock();
@@ -450,9 +466,9 @@ int main(int argc, char *argv[])
     //printf ("New number of diagrams = %d\n", savednum);
     if (min2facets <= MAX_FACET){
         fprintf (logf, "Min facets for 2-nghb = %d\n", min2facets);
-        fprintf (out2f, "Min facets = %d\n", min2facets);
+        fprintf (out2ftxt, "Min facets = %d\n", min2facets);
     }    
-	fclose (out2f);
+	fclose (out2ftxt);
 	fclose (logf);
     //printf ("Root finalized\n");
 	MPI_Finalize();

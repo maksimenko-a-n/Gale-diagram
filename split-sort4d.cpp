@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h> // memcmp()
 #include <stdint.h>  // uint32_t
-//#include <time.h>
+#include <time.h>
 
 #define DIM 4 // The maximum dimension of the Gale diagram (GD)
 #define MAX_VERT 20 // The bit length of the type uint32_t
@@ -54,6 +54,17 @@ int main(int argc, char *argv[])
         return 2;
     }
 
+ 	FILE *logf = fopen("log", "a");
+	if (logf == NULL){
+		printf ("Write file ERROR: Cann't open the file 'log'\n");
+		return 1;
+	}
+    // Print the start time in log-file
+    time_t rawtime;
+    time ( &rawtime );
+    fprintf (logf, "\n%sSplit and sort %s\n", ctime (&rawtime), argv[1]);
+    fprintf (logf, "dim = %d, nverts = %d\n", DIM, nverts);
+
 	FILE *inf = fopen(argv[1], "rb");
 	if (inf == NULL){
 		printf ("Read file ERROR: Cann't open the file %s\n", argv[1]);
@@ -62,40 +73,42 @@ int main(int argc, char *argv[])
     fseek(inf, 0, SEEK_END); // Go to end of file
     unsigned long long inputlen = ftell(inf); // The length of the input file
     fseek(inf, 0, SEEK_SET); // Go to begin of file
-    const unsigned long long MemorySize = 16E9; // RAM size
+    const unsigned long long MemorySize = 12E9; // RAM size
     //const unsigned long long MemorySize = 4294967296;
     //const unsigned long long MemorySize = 4E7; // RAM size
     int nfiles = ((inputlen-1) / MemorySize) + 1; // The number of parts
-    printf ("%d files will be written\n", nfiles);
+    fprintf (logf, "%d files will be written\n", nfiles);
     inputlen /=  nverts * sizeof(uint8_t); // The total number of diagrams
     unsigned long long one_file_size = inputlen / nfiles; // The num of diagrams in one new file
     //fseek(inf, (nfiles - rank - 1) * one_file_size * (nverts * sizeof(uint8_t)), SEEK_SET); // Go to begin of block
 
-    printf ("Allocate memory\n");
+    fprintf (logf, "Allocate memory");
+    fflush (logf);
+	clock_t begt = clock();
+	clock_t prevt = begt;
     uint8_t **all_diagrams = (uint8_t **)malloc(sizeof(uint8_t *) * one_file_size);
     if (all_diagrams == NULL){
-        printf ("ERROR: Cann't allocate memory for all_diagrams\n");
+        fprintf (logf, "ERROR: Cann't allocate memory for all_diagrams\n");
+        fclose (logf);
         return 4;
     }
     for (unsigned long i = 0; i < one_file_size; i++){
         uint8_t *data = (uint8_t *)malloc(sizeof(uint8_t)*(nverts));
         if (data == NULL){
-            printf ("ERROR: Out of memory on %d step\n", i);
+            fprintf (logf, "ERROR: Out of memory on %d step\n", i);
+            fclose (logf);
             return 5;
         }
         all_diagrams[i] = data;
     }        
     
+    clock_t curt;
     for (int part = 0; part < nfiles; part++){
-        char outfname[256]; // The output file name
-        sprintf (outfname, "%da%d", nverts, part);
-        FILE *outf = fopen(outfname, "wb");
-        if (outf == NULL){
-            printf ("Write file ERROR: Cann't open the file %s\n", outfname);
-            break;
-        }
+        curt = clock();
+        fprintf (logf, " (%2d sec)\n%d-th file: Read", (curt - prevt)/CLOCKS_PER_SEC, part);
+        prevt = curt;
+        fflush (logf);
 
-        printf ("%d-th block: Read", part);
         unsigned long num;
         for (num = 0; num < one_file_size; num++){
             if(fread (all_diagrams[num], sizeof(uint8_t), nverts, inf) < nverts)
@@ -103,26 +116,49 @@ int main(int argc, char *argv[])
         }
         if (num == 0)  break;
     
-        printf (", Sort");
-        qsort (all_diagrams, num, sizeof(uint8_t *), compare_vertices);
+        curt = clock();
+        fprintf (logf, " %d (%2d sec), Sort", num, (curt - prevt)/CLOCKS_PER_SEC);
+        prevt = curt;
+        fflush (logf);
 
-        printf (", Write in %s", outfname);
+        qsort (all_diagrams, num, sizeof(uint8_t *), compare_vertices);
+        curt = clock();
+        fprintf (logf, " (%2d sec),", (curt - prevt)/CLOCKS_PER_SEC);
+        prevt = curt;
+
+        char outfname[256]; // The output file name
+        sprintf (outfname, "%da%d", nverts, part);
+        FILE *outf = fopen(outfname, "wb");
+        if (outf == NULL){
+            fprintf (logf, "Write file ERROR: Cann't open the file %s\n", outfname);
+            break;
+        }
+
+        fprintf (logf, " Write in %s", outfname);
+        fflush (logf);
+
         uint8_t **pt = all_diagrams;
         fwrite (*pt, sizeof(uint8_t), nverts, outf);
-        //unsigned long writen = 1;
+        unsigned long written = 1;
         for (unsigned long i = 1; i < num; i++, pt++){
             if (compare_vertices(pt, pt+1)){
                 fwrite (*(pt+1), sizeof(uint8_t), nverts, outf);
-                //writen++;
+                written++;
             }    
         }
+        fprintf (logf, " %d", written);
         fclose (outf);
-        printf ("\n");
     }
     fclose (inf);
-    printf ("Deallocate memory");
+    curt = clock();
+    fprintf (logf, " (%2d sec)\nDeallocate memory", (curt - prevt)/CLOCKS_PER_SEC);
+    prevt = curt;
+    fflush (logf);
     for (unsigned long i = 0; i < one_file_size; i++)
         free(all_diagrams[i]);
     free(all_diagrams);
+    curt = clock();
+    fprintf (logf, " (%2d sec)\nElapsed time: %3d sec\n", (curt - prevt)/CLOCKS_PER_SEC, (curt - begt)/CLOCKS_PER_SEC);
+    fclose (logf);
 	return 0;
 }

@@ -8,7 +8,7 @@
 
 #define DIM 4 // The maximum dimension of the Gale diagram (GD)
 #define MAX_VERT 20 // The bit length of the type uint32_t
-#define MAX_FACET 20 // For the acceleration of the processing
+#define MAX_FACET 19 // For the acceleration of the processing
 //#define LINE_SIZE 1024 // The maximum len of a line in the input file
 
 const int Nall = pow(3, DIM); // The number of all points that can be added
