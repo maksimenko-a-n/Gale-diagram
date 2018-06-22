@@ -6,6 +6,7 @@
 
 #define DIM 4 // The maximum dimension of the Gale diagram (GD)
 #define MAX_VERT 20 // The bit length of the type uint32_t
+#define BLOCK_SIZE 65536 // The size of memory block
 
 using namespace std; 
 
@@ -54,10 +55,10 @@ int main(int argc, char *argv[])
         return 2;
     }
 
- 	FILE *logf = fopen("log", "a");
+ 	FILE *logf = fopen("log.txt", "a");
 	if (logf == NULL){
 		printf ("Write file ERROR: Cann't open the file 'log'\n");
-		return 1;
+		return 3;
 	}
     // Print the start time in log-file
     time_t rawtime;
@@ -79,8 +80,9 @@ int main(int argc, char *argv[])
     int nfiles = ((inputlen-1) / MemorySize) + 1; // The number of parts
     fprintf (logf, "%d files will be written\n", nfiles);
     inputlen /=  nverts * sizeof(uint8_t); // The total number of diagrams
-    unsigned long long one_file_size = inputlen / nfiles; // The num of diagrams in one new file
-    //fseek(inf, (nfiles - rank - 1) * one_file_size * (nverts * sizeof(uint8_t)), SEEK_SET); // Go to begin of block
+    unsigned long long one_file_size = (inputlen - 1) / nfiles + 1; // The num of diagrams in one new file
+    unsigned long long nblocks = (one_file_size - 1) / BLOCK_SIZE + 1;
+    one_file_size = nblocks * BLOCK_SIZE; // file size is multiple of BLOCK_SIZE
 
     fprintf (logf, "Allocate memory");
     fflush (logf);
@@ -92,15 +94,16 @@ int main(int argc, char *argv[])
         fclose (logf);
         return 4;
     }
-    for (unsigned long i = 0; i < one_file_size; i++){
-        uint8_t *data = (uint8_t *)malloc(sizeof(uint8_t)*(nverts));
-        if (data == NULL){
+    uint8_t **data = (uint8_t **)malloc(sizeof(uint8_t *) * nblocks);
+    for (unsigned long i = 0; i < nblocks; i++){
+        data[i] = (uint8_t *)malloc(sizeof(uint8_t) * nverts * BLOCK_SIZE);
+        if (data[i] == NULL){
             fprintf (logf, "ERROR: Out of memory on %d step\n", i);
             fclose (logf);
             return 5;
         }
-        all_diagrams[i] = data;
-    }        
+    }
+
     
     clock_t curt;
     for (int part = 0; part < nfiles; part++){
@@ -109,10 +112,17 @@ int main(int argc, char *argv[])
         prevt = curt;
         fflush (logf);
 
-        unsigned long num;
-        for (num = 0; num < one_file_size; num++){
-            if(fread (all_diagrams[num], sizeof(uint8_t), nverts, inf) < nverts)
-                break; // The end of input file
+        
+        unsigned long num = 0;
+        int read_size = BLOCK_SIZE;
+        for (unsigned long row = 0; row < nblocks && read_size == BLOCK_SIZE; row++){
+            uint8_t *currec = data[row];
+            read_size = fread (currec, sizeof(uint8_t), BLOCK_SIZE * nverts, inf) / nverts;
+            for (unsigned long col = 0; col < read_size; col++){
+                all_diagrams[num] = currec;
+                num++;
+                currec += nverts;
+            }
         }
         if (num == 0)  break;
     
@@ -154,8 +164,10 @@ int main(int argc, char *argv[])
     fprintf (logf, " (%2d sec)\nDeallocate memory", (curt - prevt)/CLOCKS_PER_SEC);
     prevt = curt;
     fflush (logf);
-    for (unsigned long i = 0; i < one_file_size; i++)
-        free(all_diagrams[i]);
+    // Free memory
+    for (unsigned long i = 0; i < nblocks; i++)
+        free(data[i]);
+    free(data);
     free(all_diagrams);
     curt = clock();
     fprintf (logf, " (%2d sec)\nElapsed time: %3d sec\n", (curt - prevt)/CLOCKS_PER_SEC, (curt - begt)/CLOCKS_PER_SEC);
