@@ -1,4 +1,4 @@
-#include "gale-diagram.hpp"
+#include "gale-diagram-1.hpp"
 #include <time.h>
 
 //////////////
