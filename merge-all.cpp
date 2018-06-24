@@ -8,7 +8,7 @@ inline void read_diagram(FILE *f, Tpoint *diagram, int size){
 
 // Write diagram to file f
 inline void write_diagram(FILE *f, Tpoint *diagram, int size){
-    fwrite(diagram, sizeof(Tpoint), size, out);
+    fwrite(diagram, sizeof(Tpoint), size, f);
 }
 
 int merge(const char *infile1, const char *infile2, const char *outfile){
